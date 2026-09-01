@@ -1,5 +1,11 @@
 name: publish
 
+# Bootstrap publish for reqtrail's first release. Uses a granular npm
+# token because trusted publishing can't be configured until the package
+# exists on the registry. Once 0.0.1 is live, configure the trusted
+# publisher on the package settings page, delete NPM_TOKEN, and remove
+# the env block below — after that this matches ctxfold's release.yml.
+
 on:
   workflow_dispatch:
 
@@ -11,12 +17,21 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
         with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org
-      - run: npm install -g npm@latest
-      - run: npm --version
-      - run: npm whoami || echo "not authenticated"
-      - run: npm publish
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      # Node 22 ships npm 10.x; trusted publishing needs >= 11.5.1.
+      - name: Upgrade npm
+        run: npm install -g npm@latest
+
+      # No --provenance: attestation requires OIDC, and this run is
+      # token-authenticated. Add it back at the same time as the
+      # trusted publisher.
+      - name: Publish
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
