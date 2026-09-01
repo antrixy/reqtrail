@@ -1,0 +1,33 @@
+{
+  "name": "reqtrail",
+  "version": "0.0.1",
+  "description": "Placeholder. A local, Git-friendly CLI for inspecting and running HTTP requests, with per-value provenance.",
+  "license": "MIT",
+  "author": "Maverick Yadav",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/antrixy/reqtrail.git"
+  },
+  "bugs": {
+    "url": "https://github.com/antrixy/reqtrail/issues"
+  },
+  "homepage": "https://github.com/antrixy/reqtrail#readme",
+  "keywords": [
+    "http",
+    "api",
+    "cli",
+    "request",
+    "provenance"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
