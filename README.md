@@ -1,6 +1,8 @@
 # reqtrail
 
-**Status: placeholder. Nothing is implemented yet. Do not install this.**
+**Status: name placeholder. `reqtrail` is published on npm at 0.0.1, but that
+package contains no code — only this README and a licence. There is nothing to
+install and nothing to run.**
 
 A local, Git-friendly CLI for running HTTP requests and inspecting exactly what
 gets sent — including where every part of every value came from.
@@ -42,8 +44,13 @@ build the rest. That test comes first.
 
 ## Status
 
-Nothing published. This repository exists to hold the name while the first
-release is built. There is no installable package, no CLI, and no API.
+`reqtrail@0.0.1` was published to npm on 2026-09-01 to hold the name and to
+verify the release pipeline. **It ships no executable code**: the package
+contains this README and the licence, and declares no `bin`. There is no CLI
+and no API yet.
+
+Nothing in this document describes shipped behaviour. Everything under "What is
+planned" is planned.
 
 ## Licence
 
