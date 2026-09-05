@@ -3,13 +3,14 @@
 // the run, and so does a check that silently stops executing.
 
 import { execFileSync } from "node:child_process";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { resolveWorkspace } from "../src/core/prepare.js";
 import { parseWorkspace, selectRequest } from "../src/core/parse.js";
 import { Refusal } from "../src/core/errors.js";
 
-const EXPECTED = 133;
+const EXPECTED = 134;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -241,9 +242,22 @@ check("env source is 'environment'", () =>
     .source === "environment");
 check("a whole-origin variable is attributed to itself", () =>
   prov("{{b}}/users", { b: "https://a.example" })[0].produced === "https://a.example");
-check("header spans are never transformed", () =>
-  prov("https://a.example", {}, {}, [{ name: "a", value: "{{x}} b" }],)
-    .length === 0 || true);
+// The same value, in a URL and in a header, from one workspace: transformed in
+// the URL and not in the header. Position determines transformation, which is
+// the reason provenance has one row per OCCURRENCE.
+//
+// This replaces a check that read `.length === 0 || true`. The assertion was
+// wrong — the fixture substitutes one header span, so the length is 1 — and the
+// `|| true` was silencing the failure rather than covering a redundancy. It
+// counted toward 133 and tested nothing.
+check("a span transformed in a url is not transformed in a header", () => {
+  const p = prov("https://a.example/?q={{x}}", { x: "a b" }, {},
+    [{ name: "a", value: "{{x}}" }]);
+  const url = p.find((r) => r.path === "url");
+  const header = p.find((r) => r.path === "headers[0]");
+  return url.transformed === true && url.produced === "a%20b" &&
+    header.transformed === false && header.produced === "a b";
+});
 check("header span produced equals substituted", () => {
   const p = prov("https://a.example", { x: "a b" }, {}, [{ name: "a", value: "{{x}}" }]);
   return p[0].produced === "a b" && p[0].transformed === false;
@@ -438,7 +452,7 @@ check("exit code 3 is unreachable — no transport exists", () => {
 });
 
 function readSource(rel) {
-  return execFileSync("cat", [join(root, rel)], { encoding: "utf8" });
+  return readFileSync(join(root, rel), "utf8");
 }
 
 // ------------------------------------------------------------ artifacts ----
@@ -475,6 +489,28 @@ check("the README does not claim this release sends anything", () =>
 check("the version in package.json is the version the CLI reports", () => {
   const pkg = JSON.parse(readSource("package.json"));
   return pkg.version === run(["--version"]).stdout.trim();
+});
+
+check("no check in this suite is silenced with an always-true clause", () => {
+  const suspicious = /\|\|\s*true|&&\s*true\b|=>\s*true\s*\)/;
+  for (const f of readdirSync(join(root, "test"))) {
+    if (!f.endsWith(".mjs")) continue;
+    const src = readFileSync(join(root, "test", f), "utf8");
+    for (const [i, raw] of src.split("\n").entries()) {
+      const line = raw.trim();
+      // COMMENTS ARE SKIPPED, and the reason is a repeat offence: the first
+      // version of this check failed on the comment that documents it, exactly
+      // as the dangerouslySetInnerHTML source grep did in test/ui.mjs. A
+      // pattern match cannot tell a use from a mention, and a check that makes
+      // documenting a rule impossible gets deleted rather than obeyed.
+      if (line.startsWith("//") || line.startsWith("*")) continue;
+      if (line.includes("const suspicious")) continue;
+      if (suspicious.test(line)) {
+        throw new Error(`test/${f}:${i + 1} cannot report failure: ${line.slice(0, 80)}`);
+      }
+    }
+  }
+  return true;
 });
 
 // ------------------------------------------------------------- tripwire ----

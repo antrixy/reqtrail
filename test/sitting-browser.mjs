@@ -78,6 +78,7 @@ try {
   const rows = await page.$$eval(".prov tbody tr", (n) => n.length).catch(() => 0);
   record("B1",
     wire?.includes("GET https://api.example.com/users/42?q=a%20b") && rows === 4
+      && pageErrors.length === 0
       ? "right" : "wrong",
     `wire=${JSON.stringify(wire?.split("\n")[0] ?? null)} provRows=${rows} ` +
     `pageErrors=${pageErrors.length}`);
@@ -152,7 +153,8 @@ try {
     }
   }, [`${base}/api/session`, token]);
   const serverSaw = seen.filter((r) => r.origin === `http://127.0.0.1:${attackerPort}`);
-  record("B5", attempt.read === false ? "right" : "wrong",
+  record("B5",
+    attempt.read === false && serverSaw.length > 0 ? "right" : "wrong",
     `page=${JSON.stringify(attempt)} serverSawForeignOrigin=${serverSaw.length}`);
   await page3.close();
 } finally {
@@ -165,9 +167,28 @@ const wrong = results.filter((r) => r.verdict === "wrong");
 record("B10", wrong.length >= 1 ? "right" : "wrong",
   `${wrong.length} of B1-B9 wrong`);
 
+// THE GATE, and the shape of it is the point.
+//
+// It used to trip only on B4-B7, so B1, B2, B3, B8 and B9 could fail in silence
+// — five of nine predictions, including every one about whether the application
+// works at all.
+//
+// The obvious repair, "fail on any wrong prediction", is wrong as stated, and
+// predicting the collision was cheaper than discovering it: B10 is a
+// META-prediction about this sitting's own error rate, so the better the work,
+// the more certainly it is wrong and the more certainly a naive gate trips.
+// A sitting cannot be gated on its own error rate. B10 is recorded and
+// excluded, by name and with the reason attached.
+const META = new Set(["B10"]);
+const gating = results.filter((r) => r.verdict === "wrong" && !META.has(r.id));
+
 console.log(`sitting A — chromium\n`);
 for (const r of results) {
   console.log(`  ${r.id.padEnd(4)} ${r.verdict.toUpperCase().padEnd(6)} ${r.observed}`);
 }
 console.log(`\n${results.filter((r) => r.verdict === "right").length}/${results.length} predictions held`);
-process.exit(wrong.length && wrong.some((w) => ["B4", "B5", "B6", "B7"].includes(w.id)) ? 1 : 0);
+if (gating.length) {
+  console.error(`\n  FAIL — ${gating.length} prediction(s) wrong: ` +
+    gating.map((g) => g.id).join(", "));
+}
+process.exit(gating.length ? 1 : 0);
