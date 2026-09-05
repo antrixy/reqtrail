@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createUiServer, newToken, LIMITS } from "../src/server/server.js";
 
-const EXPECTED = 50;
+const EXPECTED = 51;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const file = join(root, "examples", "example.reqtrail.json");
@@ -98,6 +98,16 @@ await check("row 3 — the right token is 200", async () =>
   (await post("/api/session")).status === 200);
 await check("row 3 — tokens are 256 bits of randomness", () =>
   newToken().length >= 43 && newToken() !== newToken());
+// A SOURCE-LEVEL check, and it is labelled as one. Constant-time comparison
+// cannot be demonstrated behaviourally by this suite — a wrong token is
+// rejected either way, which is exactly why the mutation pass found this
+// unprotected. What is checkable is that the code reaches for the constant-time
+// primitive rather than `===`, and that is what this asserts. It does not
+// establish that the comparison is timing-safe in fact.
+await check("row 3 — the token comparison uses a constant-time primitive", () => {
+  const src = readFileSync(join(root, "src", "server", "server.js"), "utf8");
+  return /timingSafeEqual\(/.test(src) && !/presented === token|token === presented/.test(src);
+});
 await check("row 3 — NOT a cookie: no Set-Cookie is ever sent", async () =>
   (await post("/api/session")).headers.get("set-cookie") === null);
 await check("row 3 — a token in a Cookie header is not accepted", async () =>
