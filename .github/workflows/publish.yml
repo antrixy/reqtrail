@@ -29,6 +29,18 @@ jobs:
       - name: Upgrade npm
         run: npm install -g npm@latest
 
+      # Required: prepack builds the UI bundle and runs the suite, so the
+      # build-time dependencies have to be present. Without this the publish
+      # fails at prepack — or, worse, would ship a stale dist/ if prepack were
+      # weakened to tolerate it.
+      - name: Install dependencies
+        run: npm ci
+
+      # The tag is published only if the suite passes here, on a clean
+      # checkout, rather than only on the machine that wrote the code.
+      - name: Test
+        run: npm test
+
       # No NODE_AUTH_TOKEN — auth is the short-lived OIDC token.
       # --provenance is redundant under trusted publishing (it's on by
       # default) but kept explicit so intent is obvious.
