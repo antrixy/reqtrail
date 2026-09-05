@@ -5,9 +5,17 @@
 // both halves look correct in isolation. So the core returns structures and the
 // adapters own only formatting, stdout/stderr and exit codes.
 //
-// In 0.1.0 there is no transport, so there is no materialize() anywhere in the
-// product: no code path produces a resolved secret value at all. The URL
-// normalizer is the single place a secret is read, and it returns masked bytes.
+// SECRETS. This comment used to say that no code path produces a resolved
+// secret value at all. THAT WAS FALSE, and the leak audit found the gap it
+// hid: `url.js` must materialise, because normalization has to see real bytes
+// to report that a secret was re-encoded. Three refusals then quoted the
+// materialised string and put the secret on four output channels.
+//
+// The accurate statement: there is no materialize() for SENDING, because 0.1.0
+// has no transport. `src/core/url.js` is the one place a resolved secret
+// exists, it holds it for the length of one function, and it returns masked
+// bytes and nothing else — including in its refusals. Everything downstream of
+// it, this file included, sees masks only.
 
 import { refuse } from "./errors.js";
 import { segment, masked, allResolved } from "./grammar.js";
@@ -52,12 +60,14 @@ export function prepareRequest(request, variables, env) {
       const culprit = segs.find((s) =>
         s.kind !== "literal" && s.resolved &&
         /[\r\n\0]/.test(s.secret ? env[s.key] : s.value));
+      if (culprit) {
+        refuse("header.control", path,
+          "the value of $reference contains CR, LF or NUL; this is a " +
+          "header-injection attempt and is refused",
+          { reference: culprit.written }, culprit.key ?? culprit.name);
+      }
       refuse("header.control", path,
-        culprit
-          ? `the value of ${culprit.written} contains CR, LF or NUL; ` +
-            "this is a header-injection attempt and is refused"
-          : "this header value contains CR, LF or NUL",
-        culprit ? (culprit.key ?? culprit.name) : undefined);
+        "this header value contains CR, LF or NUL");
     }
     if (flat === "") warnings.push({ code: "header.empty", path, cause: "header value is empty" });
     if (flat !== flat.trim()) {

@@ -38,8 +38,10 @@
   "scripts": {
     "build:ui": "node scripts/build-ui.mjs",
     "pretest": "node scripts/build-ui.mjs",
-    "test": "node test/selftest.mjs && node test/ui.mjs && node test/parity.mjs && node test/server.mjs",
+    "test": "node test/enumerate-refusals.mjs && node test/selftest.mjs && node test/leak-audit.mjs && node test/ui.mjs && node test/parity.mjs && node test/server.mjs",
     "test:selftest": "node test/selftest.mjs",
+    "test:refusals": "node test/enumerate-refusals.mjs --list",
+    "test:leak": "node test/leak-audit.mjs",
     "pretest:ui": "node scripts/build-ui.mjs",
     "test:ui": "node test/ui.mjs",
     "test:parity": "node test/parity.mjs",

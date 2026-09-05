@@ -62,8 +62,8 @@ const MUTANTS = [
 
   ["a non-http scheme is accepted",
     "src/core/url.js",
-    'if (u.protocol !== "http:" && u.protocol !== "https:") {\n    refuse("url.scheme"',
-    'if (false) {\n    refuse("url.scheme"'],
+    'if (u.protocol !== "http:" && u.protocol !== "https:") {\n    // The scheme is named only',
+    'if (false) {\n    // The scheme is named only'],
 
   ["an unrecognised schema version is read anyway",
     "src/core/parse.js",
@@ -106,6 +106,35 @@ const MUTANTS = [
     "out.produced = span.transformed ? `${MASK} (masked, normalized)` : `${MASK} (masked)`;",
     "out.produced = span.produced ?? `${MASK} (masked)`;"],
 
+  ["control characters are not escaped in a message",
+    "src/core/errors.js",
+    "for (const [k, v] of Object.entries(values)) safe[k] = quote(v);",
+    "for (const [k, v] of Object.entries(values)) safe[k] = String(v);"],
+
+  ["the field path is not escaped",
+    "src/core/errors.js",
+    "path: escapeControls(path),", "path,"],
+
+  ["DEL and C1 are left unescaped",
+    "src/core/errors.js",
+    "\\u007f-\\u009f]/g;", "]/g;"],
+
+  ["the url refusal names the raw url instead of the masked one",
+    "src/core/url.js",
+    "{ url: display });", "{ url: str });"],
+
+  // Aimed at the real property: when the masked string cannot be parsed, the
+  // scheme must NOT be recovered from the raw one. That is the exact leak.
+  ["the scheme falls back to the raw url when masking breaks the parse",
+    "src/core/url.js",
+    "} catch { safeScheme = null; }",
+    "} catch { safeScheme = new URL(str).protocol.slice(0, -1); }"],
+
+  ["rendered header values are not escaped",
+    "src/cli/render.js",
+    "lines.push(`${esc(h.name)}: ${esc(h.value)}`);",
+    "lines.push(`${h.name}: ${h.value}`);"],
+
   ["an unresolved request exits 0",
     "src/cli/main.js",
     "return result.resolvable ? 0 : 1;", "return 0;"],
@@ -140,8 +169,12 @@ for (const [name, file, from, to, expect = "killed"] of MUTANTS) {
 
     let died = false;
     try {
-      execFileSync(process.execPath, [join(dir, "test", "selftest.mjs")],
-        { cwd: dir, stdio: "pipe", env: { PATH: process.env.PATH } });
+      // Measured against the selftest AND the leak audit: a mutant that
+      // reopens the leak is killed by the audit and by nothing else.
+      for (const suite of ["selftest.mjs", "leak-audit.mjs"]) {
+        execFileSync(process.execPath, [join(dir, "test", suite)],
+          { cwd: dir, stdio: "pipe", env: { PATH: process.env.PATH } });
+      }
     } catch {
       died = true;
     }

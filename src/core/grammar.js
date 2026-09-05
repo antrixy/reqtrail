@@ -41,7 +41,8 @@ export function segment(input, path, vars, env) {
     if (ref === "") refuse("grammar.empty", path, "empty variable name");
     if (ref !== ref.trim()) {
       refuse("grammar.whitespace", path,
-        `whitespace inside ${written}; one canonical spelling`);
+        "whitespace inside $reference; one canonical spelling",
+        { reference: written });
     }
 
     if (ENV.test(ref)) {
@@ -51,8 +52,8 @@ export function segment(input, path, vars, env) {
       const set = Object.prototype.hasOwnProperty.call(env, key);
       if (set && env[key].includes("{{")) {
         refuse("grammar.nested", path,
-          `the value of environment variable ${key} contains a template; ` +
-          "resolution is single-pass", key);
+          "the value of environment variable $key contains a template; " +
+          "resolution is single-pass", { key }, key);
       }
       segs.push({
         kind: "environment", written, key,
@@ -63,8 +64,8 @@ export function segment(input, path, vars, env) {
       const defined = Object.prototype.hasOwnProperty.call(vars, ref);
       if (defined && vars[ref].includes("{{")) {
         refuse("grammar.nested", path,
-          `the value of variable ${ref} contains a template; ` +
-          "resolution is single-pass", ref);
+          "the value of variable $name contains a template; " +
+          "resolution is single-pass", { name: ref }, ref);
       }
       segs.push({
         kind: "variable", written, name: ref,
@@ -73,10 +74,15 @@ export function segment(input, path, vars, env) {
         ...(defined ? { value: vars[ref] } : {}),
       });
     } else {
+      // NOTE the literal `$env.` in this template. Slot names are
+      // [a-z][A-Za-z0-9]* and `$env` would match one, so the value is supplied
+      // under that name to render it back — the alternative, a second escaping
+      // convention, buys a new way to be wrong.
       refuse("grammar.charset", path,
-        `"${ref}" is not a valid variable name; ` +
-        "collection variables are [A-Za-z0-9_-]+ and environment references " +
-        "are $env. followed by [A-Za-z_][A-Za-z0-9_]*");
+        "$name is not a valid variable name; collection variables are " +
+        "[A-Za-z0-9_-]+ and environment references are $env followed by " +
+        "[A-Za-z_][A-Za-z0-9_]*",
+        { name: ref, env: "$env." });
     }
 
     i = close + 2;

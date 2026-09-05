@@ -94,9 +94,13 @@ is one of the failures this tool exists to make visible.
 
 **Two kinds of reference, and they do not compete.** `{{name}}` reads a
 collection variable. `{{$env.NAME}}` reads a process environment variable and is
-treated as a secret: it is held as a reference, never materialised into anything
-reqtrail displays, generates or logs. In this release nothing is sent, so no
-code path resolves one at all.
+treated as a secret: it is held as a reference, and never appears in anything
+reqtrail displays, generates or logs. One place resolves it — the URL
+normalizer, which has to see the real bytes to tell you that normalization
+changed them — and that code returns masked bytes only, including in its
+refusals. Nothing else in the program sees the value. An earlier version of
+this paragraph claimed no code path resolved a secret at all; that was wrong,
+and three refusals leaked as a result. See `LEAK-AUDIT-EVIDENCE.md`.
 
 **Substitution is one pass.** A `{{...}}` inside a variable's value is refused,
 not expanded. That is what keeps provenance a flat list rather than a tree, and

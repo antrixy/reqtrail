@@ -28,7 +28,7 @@
 // leak the value or show a URL that is not the one that would be sent.
 
 import { refuse } from "./errors.js";
-import { plain } from "./grammar.js";
+import { plain, masked } from "./grammar.js";
 
 const MASK = "\u2022\u2022\u2022\u2022";
 
@@ -40,16 +40,47 @@ function sentinelCore(raw) {
   }
 }
 
-function parse(str, path) {
+// `str` carries plaintext and is only ever handed to `new URL`. `display` is
+// the masked form and is the ONLY thing a message may name.
+//
+// THIS IS WHERE THE LEAK WAS. The refusals below used to quote `str`, so a
+// workspace whose URL held an environment reference and failed to parse printed
+// the resolved secret to the terminal, to --json, and across the loopback
+// boundary. The masked form is available without parsing, so nothing was gained
+// by using the raw one.
+function parse(str, display, path) {
   let u;
   try {
     u = new URL(str);
   } catch {
-    refuse("url.invalid", path, `"${str}" is not a valid absolute URL`);
+    refuse("url.invalid", path, "$url is not a valid absolute URL",
+      { url: display });
   }
   if (u.protocol !== "http:" && u.protocol !== "https:") {
+    // The scheme is named only when it can be derived from the MASKED string.
+    // If masking breaks the parse, the scheme may have come from the secret
+    // itself and naming it would leak it a character at a time.
+    // Derived from the MASKED string, so it is safe by construction rather
+    // than by a test on the raw one. If any part of the scheme came from a
+    // secret, the mask leaves a `\u2022` in the scheme position and the masked
+    // string does not parse at all — there is no case where this yields a
+    // scheme the mask was hiding.
+    //
+    // An earlier version also refused to name the scheme whenever the URL
+    // contained a mask ANYWHERE, which was over-conservative: a literal `ftp://`
+    // with a secret in the query is perfectly safe to name, and withholding it
+    // costs the diagnosis for no gain. Mutation testing found it.
+    let safeScheme = null;
+    try {
+      safeScheme = new URL(display).protocol.slice(0, -1);
+    } catch { safeScheme = null; }
+    if (safeScheme !== null) {
+      refuse("url.scheme", path, "scheme $scheme is not http or https",
+        { scheme: safeScheme });
+    }
     refuse("url.scheme", path,
-      `scheme "${u.protocol.slice(0, -1)}" is not http or https`);
+      "the scheme is not http or https; it is not shown because it comes " +
+      "from a masked value");
   }
   // The fragment is excluded. `new URL()` keeps #frag in href, but fragments
   // are never transmitted — displaying href would show something that is not
@@ -65,7 +96,7 @@ function parse(str, path) {
 // what they became.
 export function normalizeUrl(segs, env, path) {
   const raw = plain(segs, env);
-  const { href, hadFragment } = parse(raw, path);
+  const { href, hadFragment } = parse(raw, masked(segs), path);
   const core = sentinelCore(raw + href);
 
   // Index within `segs` of each substituted segment, in order.
@@ -132,9 +163,10 @@ export function normalizeUrl(segs, env, path) {
 
     if (seg.secret && !out.determined) {
       refuse("url.secret.undisplayable", path,
-        `the URL cannot be displayed without revealing ${seg.written}: ` +
+        "the URL cannot be displayed without revealing $reference: " +
         "normalization moved or reshaped the secret's bytes and reqtrail " +
-        "cannot prove which part of the URL came from it", seg.key);
+        "cannot prove which part of the URL came from it",
+        { reference: seg.written }, seg.key);
     }
     results.push(out);
   }

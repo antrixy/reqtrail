@@ -175,6 +175,16 @@ rebinding is not reproduced and is not claimed.
 
 ## What this does and does not establish
 
+> **CORRECTION, 2026-09-05.** Two statements below are wrong and are left in
+> place rather than rewritten. **P4 is falsified**: three refusals in
+> `src/core/url.js` disclosed a resolved environment secret on four channels,
+> including across the loopback boundary. The claim that "no resolved secret
+> exists on the display side at all" was false — the URL normalizer must
+> materialise, and the sentence hid that. **The counts are stale**: the suite
+> ran 129 checks when this was written and runs 133 now, because four were added
+> afterwards and this file was not regenerated. Both are recorded in
+> `LEAK-AUDIT-EVIDENCE.md` and fixed in `LEAK-FIX-EVIDENCE.md`.
+
 **Established.** The prepared request, the provenance, and every refusal behave
 as SPEC specifies; the CLI and the loopback server produce byte-identical output
 from the same input; no resolved secret exists on the display side at all,

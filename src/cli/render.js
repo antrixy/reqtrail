@@ -1,11 +1,25 @@
 // Formatting only. This file must not decide anything: if a question can be
 // answered here that a UI would also have to answer, it belongs in the core.
 
+import { escapeControls as esc } from "../core/errors.js";
+
 const MASK = "\u2022\u2022\u2022\u2022";
 
+// Every value that reaches the terminal is escaped, not only the ones that came
+// through a refusal. The leak audit found a workspace whose header value held an
+// ANSI escape putting it on the terminal through the ORDINARY SUCCESS PATH —
+// nothing refused, nothing warned. A tool that can be made to rewrite your
+// terminal by a file it is describing has no claim, and the file is as capable
+// of it as a remote server.
+//
+// Showing `\u001b[31m` rather than emitting it is also the more accurate
+// rendering: it is what the header value contains.
+
 export function renderPrepared(result) {
-  const lines = [`${result.prepared.method} ${result.prepared.url}`];
-  for (const h of result.prepared.headers) lines.push(`${h.name}: ${h.value}`);
+  const lines = [`${result.prepared.method} ${esc(result.prepared.url)}`];
+  for (const h of result.prepared.headers) {
+    lines.push(`${esc(h.name)}: ${esc(h.value)}`);
+  }
   return lines.join("\n");
 }
 
@@ -15,15 +29,18 @@ function produced(r) {
   if (!r.resolved) return "(unresolved)";
   if (r.secret) return r.produced;
   if (r.empty) return "(empty)";
-  if (r.transformed) return `${JSON.stringify(r.substituted)} \u2192 ${r.produced}`;
-  if (r.produced !== undefined) return r.produced;
-  return r.substituted;
+  if (r.transformed) {
+    return `${esc(JSON.stringify(r.substituted))} \u2192 ${esc(r.produced)}`;
+  }
+  if (r.produced !== undefined) return esc(r.produced);
+  return esc(r.substituted);
 }
 
 export function renderProvenance(result) {
   if (result.provenance.length === 0) return "";
   const rows = result.provenance.map((r) => [
-    r.path, r.reference, r.resolved ? r.source : `${r.source} (not set)`,
+    esc(r.path), esc(r.reference),
+    r.resolved ? esc(r.source) : `${esc(r.source)} (not set)`,
     produced(r) + (r.note ? `  [${r.note}]` : ""),
   ]);
   const w = [0, 1, 2].map((i) => Math.max(...rows.map((r) => r[i].length)));
@@ -48,8 +65,10 @@ export function renderResolve(result) {
 
 export function renderDiagnostics(result) {
   const out = [];
-  for (const w of result.warnings) out.push(`warning: ${w.path}: ${w.cause}`);
-  for (const u of result.unresolved) out.push(`unresolved: ${u.path}: ${u.cause}`);
+  for (const w of result.warnings) out.push(`warning: ${esc(w.path)}: ${esc(w.cause)}`);
+  for (const u of result.unresolved) {
+    out.push(`unresolved: ${esc(u.path)}: ${esc(u.cause)}`);
+  }
   if (result.unresolved.length > 0) {
     out.push("this request cannot be sent until every reference resolves");
   }

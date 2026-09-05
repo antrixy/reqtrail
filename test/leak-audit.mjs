@@ -22,12 +22,16 @@ import { createUiServer, newToken } from "../src/server/server.js";
 
 // Fixture count tripwire: a fixture that silently stops running would turn this
 // instrument into one that reports "clean" for a path it no longer tests.
-const EXPECTED_FIXTURES = 24;
+const EXPECTED_FIXTURES = 26;
 
 // After the fix, this file is a regression test: it must exit non-zero while any
 // path leaks. Today it is expected to fail, and the failure IS the measurement.
 const SECRET = "Sup3rSecretLeakMarker";
 const HOSTILE = "\u001b[31mHOSTILE\u001b[0m";   // a terminal escape from the file
+// DEL and C1 are NOT covered by JSON.stringify, which is why the escaping helper
+// is not just JSON.stringify. Mutation testing found that no fixture reached
+// them: removing the DEL/C1 half of the pattern survived every check.
+const HOSTILE_C1 = "a\u007fb\u009fc";
 const dir = mkdtempSync(join(tmpdir(), "reqtrail-leak-"));
 const bin = "bin/reqtrail.js";
 
@@ -74,6 +78,8 @@ const FIXTURES = [
   ["grammar.nested / file value holds a template", ws({ variables: { a: `{{b}}${HOSTILE}` }, requests: [req({ url: "https://a.example/{{a}}" })] }), {}, "hostile"],
   ["header.control / file value holds CR", ws({ requests: [req({ headers: [{ name: "A", value: `x\r${HOSTILE}` }] })] }), {}, "hostile"],
   ["success path with hostile header value", ws({ requests: [req({ headers: [{ name: "A", value: HOSTILE }] })] }), {}, "hostile"],
+  ["success path with DEL and C1 in a header value", ws({ requests: [req({ headers: [{ name: "A", value: HOSTILE_C1 }] })] }), {}, "hostile"],
+  ["refusal carrying DEL and C1", ws({ requests: [req({ id: `d${HOSTILE_C1}` })] }), {}, "hostile"],
   ["success path with hostile variable value", ws({ variables: { v: HOSTILE }, requests: [req({ url: "https://a.example/?q={{v}}" })] }), {}, "hostile"],
 ];
 

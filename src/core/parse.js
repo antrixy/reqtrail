@@ -22,7 +22,8 @@ function only(obj, allowed, path) {
   for (const key of Object.keys(obj)) {
     if (!allowed.includes(key)) {
       refuse("schema.unknown-key", `${path}.${key}`,
-        `unknown key "${key}"; allowed here: ${allowed.join(", ")}`);
+        "unknown key $key; allowed here: $allowed",
+        { key, allowed: allowed.join(", ") });
     }
   }
 }
@@ -31,7 +32,8 @@ function str(obj, key, path) {
   const v = obj[key];
   if (typeof v !== "string") {
     refuse("schema.type", `${path}.${key}`,
-      `expected a string, got ${v === undefined ? "nothing" : typeof v}`);
+      "expected a string, got $got",
+      { got: v === undefined ? "nothing" : typeof v });
   }
   return v;
 }
@@ -41,7 +43,11 @@ export function parseWorkspace(text, source = "workspace") {
   try {
     doc = JSON.parse(text);
   } catch (e) {
-    refuse("schema.json", source, `file is not valid JSON: ${e.message}`);
+    // The runtime's own description of the file. Escaped like any other
+    // value, but NOT quoted as one: it is a sentence rather than a field, and
+    // quoting it would read as though the file contained that text.
+    refuse("schema.json", source, "file is not valid JSON: $reason",
+      { reason: e.message });
   }
   if (!isPlainObject(doc)) refuse("schema.type", source, "expected a JSON object");
 
@@ -52,12 +58,14 @@ export function parseWorkspace(text, source = "workspace") {
   // distributed binaries later. The number, not the string — one spelling.
   if (!("version" in doc)) {
     refuse("schema.version.missing", "version",
-      `required; this build understands schema version ${SCHEMA_VERSION}`);
+      "required; this build understands schema version $version",
+      { version: SCHEMA_VERSION });
   }
   if (doc.version !== SCHEMA_VERSION) {
     refuse("schema.version.unknown", "version",
-      `schema version ${JSON.stringify(doc.version)} is not recognised; ` +
-      `this build understands version ${SCHEMA_VERSION}`);
+      "schema version $found is not recognised; this build understands " +
+      "version $version",
+      { found: doc.version, version: SCHEMA_VERSION });
   }
 
   // `variables` is optional and defaults to {}. A file with no variables is a
@@ -71,8 +79,9 @@ export function parseWorkspace(text, source = "workspace") {
     for (const [name, value] of Object.entries(doc.variables)) {
       if (typeof value !== "string") {
         refuse("schema.type", `variables.${name}`,
-          `expected a string, got ${typeof value}; ` +
-          "values are substituted verbatim and are not converted");
+          "expected a string, got $got; values are substituted verbatim and " +
+          "are not converted",
+          { got: typeof value });
       }
       variables[name] = value;
     }
@@ -95,7 +104,7 @@ export function parseWorkspace(text, source = "workspace") {
     const id = str(r, "id", path);
     if (!ID.test(id)) {
       refuse("schema.id.charset", `${path}.id`,
-        `"${id}" is not a valid request id; ids are [A-Za-z0-9._-]+`);
+        "$id is not a valid request id; ids are [A-Za-z0-9._-]+", { id });
     }
     // Duplicate ids are REFUSED, not first-wins. First-wins picks a winner the
     // file does not express, which is the failure recorded against overlapping
@@ -103,7 +112,7 @@ export function parseWorkspace(text, source = "workspace") {
     // no way to see which one you have.
     if (seen.has(id)) {
       refuse("schema.id.duplicate", `${path}.id`,
-        `request id "${id}" is used more than once; ids must be unique`);
+        "request id $id is used more than once; ids must be unique", { id });
     }
     seen.add(id);
 
@@ -116,8 +125,8 @@ export function parseWorkspace(text, source = "workspace") {
     const method = str(r, "method", path);
     if (method !== "GET") {
       refuse("schema.method", `${path}.method`,
-        `method ${JSON.stringify(method)} is not supported; ` +
-        "this release sends GET only, spelled exactly \"GET\"");
+        "method $method is not supported; this release sends GET only, " +
+        "spelled exactly \"GET\"", { method });
     }
 
     const url = str(r, "url", path);
@@ -140,7 +149,7 @@ export function parseWorkspace(text, source = "workspace") {
         // characters.
         if (!TOKEN.test(name)) {
           refuse("schema.header.name", `${hp}.name`,
-            `"${name}" is not a valid header name`);
+            "$name is not a valid header name", { name });
         }
         return { name, value: str(h, "value", hp) };
       });
@@ -166,14 +175,16 @@ export function selectRequest(workspace, requestId) {
   if (requestId === undefined || requestId === null) {
     if (ids.length === 1) return workspace.requests[0];
     refuse("selection.ambiguous", "requests",
-      `this file contains ${ids.length} requests; name one with --request. ` +
-      `Available ids: ${ids.join(", ")}`);
+      "this file contains $count requests; name one with --request. " +
+      "Available ids: $ids",
+      { count: ids.length, ids: ids.join(", ") });
   }
 
   const found = workspace.requests.find((r) => r.id === requestId);
   if (!found) {
     refuse("selection.unknown", "requests",
-      `no request with id "${requestId}". Available ids: ${ids.join(", ")}`);
+      "no request with id $requested. Available ids: $ids",
+      { requested: requestId, ids: ids.join(", ") });
   }
   return found;
 }

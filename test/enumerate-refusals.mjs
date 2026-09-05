@@ -1,33 +1,22 @@
-// Enumerate every refuse() call site in the core and classify what its message
-// interpolates. Static, complete, and it finishes — as opposed to re-reading the
-// module and forming an impression.
+// Every refuse() call site in the core, and a CHECK on the one property that
+// makes the leak class impossible rather than merely fixed:
 //
-// The classification that matters is ORIGIN, not presence: a message containing
-// `${typeof v}` is safe, a message containing `${v}` is not, and the difference
-// is invisible to a reader skimming for template literals.
+//   A refusal's message argument must be a string LITERAL with no `${}` in it.
+//
+// If a call site can interpolate, it can bake a value into prose, and by the
+// time an adapter sees it there is nothing left to say it needs escaping. That
+// is how three environment secrets reached four output channels and nine
+// terminal escapes reached the terminal. Values travel in the values object,
+// where they are escaped once, in errors.js.
+//
+// This file reports and checks. Run it directly to see the enumeration; it
+// exits non-zero if any call site interpolates.
 
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 const dir = "src/core";
 const files = readdirSync(dir).filter((f) => f.endsWith(".js") && f !== "errors.js");
-
-// Expressions that are safe to interpolate because they cannot carry a value:
-// types, counts, and lists of allowed spellings written by the author.
-const SAFE = [
-  /^typeof\b/, /^\w+\.length$/, /^allowed\.join/, /^SCHEMA_VERSION$/,
-  /^ids\.length$/, /^ids\.join/, /^LIMITS\./,
-];
-
-// Where an interpolated expression can get its value from.
-function origin(expr, file) {
-  if (SAFE.some((r) => r.test(expr.trim()))) return "safe";
-  // Environment values enter the core only through plain()/env[key], and only
-  // url.js calls plain().
-  if (file === "url.js" && /\bstr\b|\braw\b|u\.protocol/.test(expr)) return "environment";
-  if (/\bseg\.|\bs\.written\b|\bculprit\./.test(expr)) return "reference";
-  return "file";
-}
 
 const rows = [];
 for (const f of files) {
@@ -36,10 +25,11 @@ for (const f of files) {
   lines.forEach((line, i) => {
     if (!/\brefuse\(/.test(line)) return;
     // Take the ACTUAL call, by balancing parentheses from `refuse(`. A fixed
-    // line window over-attributes: the first run of this script credited
+    // line window over-attributes: the first version of this script credited
     // grammar.unmatched with a `${ref}` belonging to the NEXT call site, which
-    // inflated both reported figures. A fixed window is not a parser.
-    const from = src.indexOf("refuse(", src.split("\n").slice(0, i).join("\n").length);
+    // inflated both reported figures. A window is not a parser.
+    const before = lines.slice(0, i).join("\n").length;
+    const from = src.indexOf("refuse(", before);
     let depth = 0, end = from;
     for (let k = src.indexOf("(", from); k < src.length; k++) {
       if (src[k] === "(") depth++;
@@ -47,32 +37,54 @@ for (const f of files) {
     }
     const chunk = src.slice(from, end + 1);
     const code = (chunk.match(/refuse\(\s*"([^"]+)"/) || [])[1] ?? "(dynamic)";
-    const exprs = [...chunk.matchAll(/\$\{([^}]+)\}/g)].map((m) => m[1]);
-    const origins = exprs.map((e) => origin(e, f));
-    rows.push({ file: f, line: i + 1, code, exprs, origins });
+
+    // The message is the third argument. Everything up to it may legitimately
+    // interpolate — a field path is built from indices and key names — so only
+    // the message is checked. Paths are escaped in errors.js.
+    const args = splitArgs(chunk.slice(chunk.indexOf("(") + 1, -1));
+    const message = args[2] ?? "";
+    rows.push({
+      file: f, line: i + 1, code,
+      interpolates: /\$\{/.test(message),
+      message: message.trim().replace(/\s+/g, " ").slice(0, 60),
+    });
   });
 }
 
-const cls = (r) =>
-  r.origins.includes("environment") ? "ENVIRONMENT"
-  : r.origins.includes("file") ? "file"
-  : r.origins.includes("reference") ? "reference"
-  : r.exprs.length ? "safe" : "literal";
+// Split on top-level commas only, so a values object does not fool it.
+function splitArgs(s) {
+  const out = [];
+  let depth = 0, cur = "", str = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (str) {
+      if (c === "\\") { cur += c + s[++i]; continue; }
+      if (c === str) str = null;
+      cur += c; continue;
+    }
+    if (c === '"' || c === "'" || c === "`") { str = c; cur += c; continue; }
+    if ("([{".includes(c)) depth++;
+    if (")]}".includes(c)) depth--;
+    if (c === "," && depth === 0) { out.push(cur); cur = ""; continue; }
+    cur += c;
+  }
+  out.push(cur);
+  return out;
+}
 
-console.log(`${rows.length} refuse() call sites in ${dir}\n`);
-const order = ["ENVIRONMENT", "file", "reference", "safe", "literal"];
-for (const k of order) {
-  const group = rows.filter((r) => cls(r) === k);
-  if (!group.length) continue;
-  console.log(`  ${k} — ${group.length}`);
-  for (const r of group) {
-    console.log(`    ${(r.file + ":" + r.line).padEnd(20)} ${r.code.padEnd(26)} ` +
-      (r.exprs.length ? r.exprs.map((e) => "${" + e.trim() + "}").join(" ") : ""));
+const bad = rows.filter((r) => r.interpolates);
+
+if (process.argv.includes("--list")) {
+  for (const r of rows) {
+    console.log(`  ${(r.file + ":" + r.line).padEnd(20)} ${r.code.padEnd(26)} ${r.message}`);
   }
   console.log();
 }
 
-const interpolating = rows.filter((r) => !["literal", "safe"].includes(cls(r)));
-console.log(`  C1 figure — sites interpolating a value the author did not write: ${interpolating.length}`);
-console.log(`  C2 figure — sites that can carry an environment value: ${rows.filter((r) => cls(r) === "ENVIRONMENT").length}`);
-console.log(`  C3 figure — sites that can carry workspace-file content: ${rows.filter((r) => cls(r) === "file").length}`);
+console.log(`refusals ${rows.length - bad.length}/${rows.length} carry a literal message`);
+if (bad.length) {
+  console.error("\nFAIL — these call sites interpolate a value into the message:");
+  for (const r of bad) console.error(`  ${r.file}:${r.line}  ${r.code}  ${r.message}`);
+  console.error("\nValues belong in the values object, where errors.js escapes them once.");
+  process.exit(1);
+}
