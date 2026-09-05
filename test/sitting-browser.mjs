@@ -141,6 +141,93 @@ try {
     `rendered=${JSON.stringify(body2.slice(0, 120).replace(/\s+/g, " "))}`);
   await page2.close();
 
+  // ---- F1-F7: the refusal contract, and the DOM channel ------------------
+  // Sitting A measured only workspaces that resolve, which is why a blank page
+  // on every refusal survived it. These fixtures are the other half.
+
+  const refusalCases = {
+    F1: ["grammar refusal",
+      { version: 1, requests: [{ id: "r", method: "GET", url: "https://a.example/{{ x }}" }] },
+      {}, undefined, "grammar.whitespace"],
+    F2: ["unknown request id",
+      { version: 1, requests: [
+        { id: "alpha", method: "GET", url: "https://a.example/" },
+        { id: "beta", method: "GET", url: "https://b.example/" }] },
+      {}, "no-such-id", "selection.unknown"],
+    F6: ["a refusal carrying a secret",
+      { version: 1, requests: [{ id: "r", method: "GET", url: "https://{{$env.T}}/" }] },
+      { T: `bad host ${SECRET}` }, undefined, "url.invalid"],
+  };
+
+  for (const [id, [label, workspace, env, wanted, code]] of Object.entries(refusalCases)) {
+    const tk = newToken();
+    const srv = createUiServer({
+      text: JSON.stringify(workspace), file: "f.json", token: tk, assets,
+      env, requestId: wanted,
+    });
+    const p = await srv.listen();
+    const page = await browser.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message.split("\n")[0]));
+    await page.goto(`http://127.0.0.1:${p}/#token=${tk}`, { waitUntil: "networkidle" });
+    const body = await page.content();
+    const text = (await page.textContent("body")).replace(/\s+/g, " ");
+    const shown = await page.textContent(".refusal").catch(() => null);
+
+    if (id === "F6") {
+      record("F6", !body.includes(SECRET) && shown !== null ? "right" : "wrong",
+        `secretInDom=${body.includes(SECRET)} refusalRendered=${shown !== null}`);
+    } else {
+      const ok = shown !== null && text.includes(code) && errs.length === 0;
+      record(id, ok ? "right" : "wrong",
+        `code=${text.includes(code)} pageErrors=${errs.length} ` +
+        `shown=${JSON.stringify((shown ?? "").slice(0, 70))}`);
+    }
+    await page.close(); await srv.close();
+  }
+
+  // ---- F3: an empty request list -----------------------------------------
+  {
+    const tk = newToken();
+    const srv = createUiServer({
+      text: JSON.stringify({ version: 1, requests: [] }), file: "f.json",
+      token: tk, assets, env: {} });
+    const p = await srv.listen();
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${p}/#token=${tk}`, { waitUntil: "networkidle" });
+    const text = (await page.textContent("body")).replace(/\s+/g, " ");
+    record("F3", text.includes("no requests") ? "right" : "wrong",
+      `shows: ${JSON.stringify(text.slice(0, 90))}`);
+    await page.close(); await srv.close();
+  }
+
+  // ---- F4: --request is honoured -----------------------------------------
+  {
+    const tk = newToken();
+    const srv = createUiServer({
+      text: JSON.stringify({ version: 1, requests: [
+        { id: "alpha", method: "GET", url: "https://alpha.example/" },
+        { id: "beta", method: "GET", url: "https://beta.example/" }] }),
+      file: "f.json", token: tk, assets, env: {}, requestId: "beta" });
+    const p = await srv.listen();
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${p}/#token=${tk}`, { waitUntil: "networkidle" });
+    const wire = await page.textContent(".wire").catch(() => "");
+    const current = await page.textContent(".req.current").catch(() => "");
+    record("F4", wire.includes("beta.example") ? "right" : "wrong",
+      `selected=${JSON.stringify(current.trim())} wire=${JSON.stringify(wire.split("\n")[0])}`);
+    await page.close(); await srv.close();
+  }
+
+  // ---- F7: can the stale-response race be provoked at all? ---------------
+  // The guard is correct either way. What is at issue is whether this sitting
+  // has earned the right to say the defect was real, so a build WITHOUT the
+  // guard is what gets probed. It cannot be, from outside the page, without
+  // controlling response order — recorded as NOT REACHED rather than counted.
+  record("F7", "not reached",
+    "the race needs control over response arrival order; not reachable from a " +
+    "browser driving the real server");
+
   // ---- B5: a cross-origin page cannot read the API ----------------------
   const page3 = await browser.newPage();
   await page3.goto(`http://127.0.0.1:${attackerPort}/`, { waitUntil: "domcontentloaded" });

@@ -141,7 +141,13 @@ function readBody(req, limit) {
 // process state and the other was given an environment explicitly. The
 // environment is INPUT, and a session's input should not be able to change
 // under it while the server is running.
-export function createUiServer({ text, file, token, assets, env }) {
+export function createUiServer({ text, file, token, assets, env, requestId }) {
+  // Aliased deliberately. `handle()` declares its own `const requestId` further
+  // down, and a const declaration shadows the whole function scope from the
+  // top — so reading the outer one earlier in the same function throws a
+  // ReferenceError from the temporal dead zone. It surfaced as a blank 500 with
+  // no explanation, which is the next comment's subject.
+  const preselect = requestId ?? null;
   const state = { port: null };
 
   const server = http.createServer({
@@ -151,8 +157,18 @@ export function createUiServer({ text, file, token, assets, env }) {
     async (req, res) => {
       try {
         await handle(req, res);
-      } catch {
+      } catch (e) {
         // Row 8. The browser learns that something failed and nothing else.
+        //
+        // But the OPERATOR is not the browser. Swallowing the error entirely
+        // cost an hour on a temporal-dead-zone ReferenceError that presented as
+        // a blank 500: the row says do not return stack traces to the page, not
+        // that the person running the process should be kept in the dark. The
+        // stack goes to this process's stderr, which is the terminal the user
+        // started `reqtrail ui` in and is not a channel the page can read.
+        process.stderr.write(
+          `reqtrail ui: internal error handling ${req.method} ${req.url}\n` +
+          `${e && e.stack ? e.stack : String(e)}\n`);
         if (!res.headersSent) fail(res, 500, "internal", "internal error");
         else res.destroy();
       }
@@ -227,6 +243,7 @@ export function createUiServer({ text, file, token, assets, env }) {
         return send(res, 200, "application/json; charset=utf-8",
           Buffer.from(JSON.stringify({
             file,
+            requestId: preselect,
             requests: ws.requests.map((r) => ({ id: r.id, name: r.name })),
           })));
       }
@@ -296,14 +313,14 @@ export function newToken() {
   return randomBytes(32).toString("base64url");
 }
 
-export async function startUi({ text, file, io = process }) {
+export async function startUi({ text, file, requestId, io = process }) {
   // Refuses early and identically to any other refusal.
   parseWorkspace(text, file);
 
   const token = newToken();
   // Captured once, for the lifetime of the session.
   const ui = createUiServer({
-    text, file, token, assets: loadAssets(), env: { ...process.env },
+    text, file, token, assets: loadAssets(), env: { ...process.env }, requestId,
   });
   const port = await ui.listen();
 

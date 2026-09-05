@@ -8,9 +8,11 @@
 // that can only find leaks it already knows the shape of is not a detector.
 //
 // Channels: the core's thrown detail, CLI human output, CLI --json, and the
-// loopback API. The DOM is NOT REACHED and says so — the UI renders a blank page
-// on any refusal, so there is nothing to inspect until that is fixed. Recording
-// it as clean would be the worse error.
+// loopback API. The DOM was NOT REACHED here while the UI rendered a blank page
+// on any refusal — recording it as clean would have been the worse error. It is
+// now measured in test/sitting-browser.mjs as F6, which loads a refusal
+// carrying a secret in a real browser and reads the rendered document. That
+// check lives there because it needs a browser, which this file does not have.
 
 import { execFileSync } from "node:child_process";
 import { writeFileSync, mkdtempSync } from "node:fs";
@@ -170,7 +172,7 @@ const secretPaths = findings.filter((f) => f.hit.some((h) => h.endsWith("SECRET"
 const controlPaths = findings.filter((f) => f.hit.some((h) => h.endsWith("CONTROL")));
 console.log(`  secret disclosure:      ${secretPaths.length} paths`);
 console.log(`  terminal escape:        ${controlPaths.length} paths`);
-console.log(`  DOM channel:            NOT REACHED — the UI renders nothing on a refusal`);
+console.log(`  DOM channel:            measured in sitting A as F6, not here`);
 
 if (FIXTURES.length !== EXPECTED_FIXTURES) {
   console.error(`\n  FAIL count tripwire: ${FIXTURES.length} fixtures, expected ${EXPECTED_FIXTURES}`);

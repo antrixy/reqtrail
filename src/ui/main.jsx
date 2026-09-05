@@ -8,7 +8,7 @@
 // escaped. Buying the escaping guarantee and leaving the escape hatch open
 // would be paying for nothing.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 // The session token arrives in the URL FRAGMENT, which browsers never send to a
@@ -39,6 +39,10 @@ async function api(path, body = {}) {
   const text = await res.text();
   let parsed;
   try { parsed = JSON.parse(text); } catch { parsed = null; }
+  // Non-2xx means the CALL failed — auth, a bad host, a malformed body. A core
+  // refusal is a successful call whose result is a refusal, and it arrives as
+  // 200 with an `error` document. The same distinction the CLI draws when a 4xx
+  // response exits 0: the answer you asked for is not a failure to answer.
   if (!res.ok) {
     throw new Error(parsed?.error?.message ?? `request failed (${res.status})`);
   }
@@ -107,11 +111,32 @@ function Substitutions({ rows }) {
               {row.source}
               {!row.resolved && <span className="quiet"> (not set)</span>}
             </td>
-            <td className="produced"><Produced row={row} /></td>
+            <td className="produced">
+              <Produced row={row} />
+              {row.note && <span className="note"> [{row.note}]</span>}
+            </td>
           </tr>
         ))}
       </tbody>
     </table>
+  );
+}
+
+// A refusal is the answer to "will this be sent", and this tool exists to give
+// that answer. Rendering nothing was the defect: a blank page on every grammar
+// error, invalid URL and unknown id.
+function RefusalView({ error }) {
+  return (
+    <section className="refusal">
+      <h2>This request is refused</h2>
+      <p className="cause">{error.cause}</p>
+      <dl>
+        <dt>Where</dt><dd className="where">{error.path}</dd>
+        <dt>Code</dt><dd className="code">{error.code}</dd>
+      </dl>
+      <p className="quiet">Nothing is sent by this release, and this request
+        could not be prepared at all.</p>
+    </section>
   );
 }
 
@@ -136,23 +161,46 @@ function App() {
   const [session, setSession] = useState(null);
   const [selected, setSelected] = useState(null);
   const [result, setResult] = useState(null);
+  const [refusal, setRefusal] = useState(null);
   const [error, setError] = useState(null);
+  // Monotonic, so a slow response for an old selection cannot replace a newer
+  // one. Without it the last response to ARRIVE wins rather than the last
+  // selection made.
+  const seq = useRef(0);
 
   useEffect(() => {
     api("/api/session")
       .then((s) => {
         setSession(s);
-        if (s.requests.length > 0) setSelected(s.requests[0].id);
+        // The CLI's --request, honoured. It was parsed, passed to startUi, and
+        // dropped; the UI always showed the first request.
+        //
+        // An UNKNOWN id is selected anyway, deliberately. Falling back to the
+        // first request would show a different request than the one asked for,
+        // silently — the failure this product exists to prevent, committed by
+        // the product. Selecting it lets the core refuse with selection.unknown
+        // and the ids it does have, which is what the CLI does.
+        if (s.requestId !== null && s.requestId !== undefined) {
+          setSelected(s.requestId);
+        } else if (s.requests.length > 0) {
+          setSelected(s.requests[0].id);
+        }
       })
       .catch((e) => setError(e.message));
   }, []);
 
   const load = useCallback((id) => {
+    const mine = ++seq.current;
     setResult(null);
+    setRefusal(null);
     setError(null);
     api("/api/resolve", { requestId: id })
-      .then(setResult)
-      .catch((e) => setError(e.message));
+      .then((r) => {
+        if (mine !== seq.current) return;   // a newer selection won
+        if (r && r.error) setRefusal(r.error);
+        else setResult(r);
+      })
+      .catch((e) => { if (mine === seq.current) setError(e.message); });
   }, []);
 
   useEffect(() => { if (selected !== null) load(selected); }, [selected, load]);
@@ -188,6 +236,12 @@ function App() {
       </nav>
 
       {error && <p className="failure">{error}</p>}
+
+      {session.requests.length === 0 && (
+        <p className="quiet">This workspace contains no requests.</p>
+      )}
+
+      {refusal && <RefusalView error={refusal} />}
 
       {result && (
         <article>

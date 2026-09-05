@@ -164,3 +164,15 @@ nav { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 1.25rem 0 0; }
 
 .quiet { color: var(--quiet); }
 .failure { color: var(--refuse); font-family: var(--mono); font-size: 0.9rem; }
+
+/* A refusal is an answer, not an error state, so it is typeset like the request
+   block it replaces rather than like a failure banner. */
+.refusal { margin-top: 2.25rem; border-left: 3px solid var(--attend); padding-left: 1.1rem; }
+.refusal h2 { margin-top: 0; color: var(--attend); }
+.refusal .cause { font-family: var(--mono); font-size: 0.9rem; overflow-wrap: anywhere; }
+
+.refusal dl { display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 1rem; margin: 0.75rem 0; }
+.refusal dt { color: var(--quiet); font-size: 0.8rem; }
+.refusal dd { margin: 0; font-family: var(--mono); font-size: 0.85rem; overflow-wrap: anywhere; }
+
+.prov .note { color: var(--quiet); }

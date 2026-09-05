@@ -104,7 +104,17 @@ export async function main(argv, io = process) {
     // Imported lazily so that `resolve` never loads the server, and so a
     // resolve-only user never has the loopback listener in their process.
     const { startUi } = await import("../server/server.js");
-    return startUi({ text, file: opts.file, requestId: opts.requestId, io });
+    try {
+      return await startUi({ text, file: opts.file, requestId: opts.requestId, io });
+    } catch (e) {
+      // A bad workspace refuses here exactly as it does under `resolve`. It
+      // used to escape this function entirely and print "internal error — this
+      // is a bug", which told the user their file was fine and reqtrail was
+      // broken.
+      if (!(e instanceof Refusal)) throw e;
+      err(renderRefusal(e.detail));
+      return 1;
+    }
   }
 
   try {
