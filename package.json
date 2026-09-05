@@ -37,13 +37,15 @@
   ],
   "scripts": {
     "build:ui": "node scripts/build-ui.mjs",
+    "pretest": "node scripts/build-ui.mjs",
     "test": "node test/selftest.mjs && node test/ui.mjs && node test/parity.mjs && node test/server.mjs",
     "test:selftest": "node test/selftest.mjs",
+    "pretest:ui": "node scripts/build-ui.mjs",
+    "test:ui": "node test/ui.mjs",
     "test:parity": "node test/parity.mjs",
     "test:server": "node test/server.mjs",
-    "test:ui": "node test/ui.mjs",
     "test:mutation": "node test/mutate.mjs",
-    "prepack": "node scripts/build-ui.mjs && node test/selftest.mjs && node test/ui.mjs && node test/parity.mjs"
+    "prepack": "npm test"
   },
   "publishConfig": {
     "access": "public"
