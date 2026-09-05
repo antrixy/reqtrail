@@ -222,6 +222,19 @@ await check("row 2 — an oversized JSON body is 413", async () => {
     JSON.stringify({ requestId: "x".repeat(LIMITS.maxBodyBytes + 1024) }));
   return r.status === 413;
 });
+// ROUTE BY ROUTE, and this is the point of the check rather than a repetition.
+// /api/session used to answer without reading its body, so rows 2 and 4 held on
+// /api/resolve alone — and the mutant for the body limit passed anyway, because
+// the other route enforced it. A row covered on one route is not covered.
+await check("row 2 — the limit applies to /api/session too", async () => {
+  const r = await post("/api/session", good,
+    JSON.stringify({ pad: "x".repeat(LIMITS.maxBodyBytes + 1024) }));
+  return r.status === 413;
+});
+// Row 4's OTHER half. The stalled-header case is node's `headersTimeout`; this
+// is ours, and it had never fired in a test. Code that has never run is not
+// known to work. Uses the shipped value, for the reason recorded against the
+// stalled-header check.
 await check("row 5 — a non-JSON content type is 415", async () =>
   (await post("/api/resolve", { ...ORIGIN, ...AUTH,
     "content-type": "text/plain" })).status === 415);
@@ -254,26 +267,13 @@ await check("rows 3, 4 — our timeouts are the ones in effect", () =>
   ui.server.headersTimeout === LIMITS.headersTimeoutMs);
 await check("rows 3, 4 — the enforcement interval is set, not left at 30s", () =>
   LIMITS.connectionsCheckingIntervalMs <= LIMITS.headersTimeoutMs);
-await check("row 4 — a stalled header block is closed, not held", async () => {
-  // MEASURED, using the shipped values deliberately. Setting headersTimeout
-  // AFTER listen() to make this check fast does not work — the connection
-  // tracker does not pick the new value up, and the check then passes or fails
-  // for a reason unrelated to the row. That cost a wrong reading once already:
-  // an early version appeared to pass and was not reproducible. Five seconds is
-  // the price of testing the thing that ships.
-  const slow = createUiServer({ text, file, token, assets, env: ENV });
-  const p = await slow.listen();
-  const r = await new Promise((resolve) => {
-    const s = net.connect(p, "127.0.0.1", () => s.write("GET / HTTP/1.1\r\n"));
-    let data = "";
-    s.on("data", (c) => { data += c; });
-    s.on("close", () => resolve({ closed: true, data }));
-    setTimeout(() => { s.destroy(); resolve({ closed: false, data }); },
-      LIMITS.headersTimeoutMs + 3000);
-  });
-  await slow.close();
-  return r.closed && r.data.includes("408");
-});
+
+// The two five-second timeout measurements live in test/server-slow.mjs. They
+// use the SHIPPED values deliberately, which is the whole reason they are slow
+// and the reason they are not weakened. Split by COST rather than by
+// importance: this suite is run sixteen times by the mutation pass, and the
+// declared-suite mechanism sends the timeout mutants to the file that can kill
+// them, so no check loses its oracle.
 
 // ------------------------------------------ server rows 7, 8: error shape ----
 
@@ -283,6 +283,11 @@ await check("row 7 — errors are uniform JSON", async () => {
   return r.headers.get("content-type").startsWith("application/json") &&
     typeof body.error.code === "string" && typeof body.error.message === "string";
 });
+// NOTE: this check deliberately provokes an internal error, so the server
+// writes a stack trace to ITS OWN stderr and it appears in this suite's output.
+// That is the behaviour under test working — the browser gets no trace, the
+// operator does. A silent run here would mean the operator logging had been
+// lost.
 await check("row 8 — an internal throw yields 500 with no stack trace", async () => {
   const broken = createUiServer({
     text: "{ not json", file: "broken.json", token, assets, env: ENV,

@@ -116,10 +116,24 @@ function constantEquals(a, b) {
 function readBody(req, limit) {
   return new Promise((resolve, reject) => {
     let size = 0;
+    let settled = false;
     const chunks = [];
-    const timer = setTimeout(() => reject(new Error("slow")), LIMITS.bodyReadTimeoutMs);
-    const done = (fn, v) => { clearTimeout(timer); fn(v); };
-    req.on("data", (c) => {
+    // On the deadline, STOP CONSUMING. Rejecting while leaving the `data`
+    // handler attached means a slow sender keeps spending memory after the
+    // request has already been refused, which is most of what the deadline was
+    // for.
+    const timer = setTimeout(() => {
+      req.pause();
+      done(reject, new Error("slow"));
+    }, LIMITS.bodyReadTimeoutMs);
+    const done = (fn, v) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      req.removeListener("data", onData);
+      fn(v);
+    };
+    const onData = (c) => {
       size += c.length;
       if (size > limit) {
         // Pause rather than destroy: destroying here resets the connection
@@ -130,7 +144,8 @@ function readBody(req, limit) {
         return;
       }
       chunks.push(c);
-    });
+    };
+    req.on("data", onData);
     req.on("end", () => done(resolve, Buffer.concat(chunks).toString("utf8")));
     req.on("error", (e) => done(reject, e));
   });
@@ -238,16 +253,11 @@ export function createUiServer({ text, file, token, assets, env, requestId }) {
         return fail(res, 415, "content-type", "expected application/json");
       }
 
-      if (path === "/api/session") {
-        const ws = parseWorkspace(text, file);
-        return send(res, 200, "application/json; charset=utf-8",
-          Buffer.from(JSON.stringify({
-            file,
-            requestId: preselect,
-            requests: ws.requests.map((r) => ({ id: r.id, name: r.name })),
-          })));
-      }
-
+      // Every body-bearing route reads through the SAME bounded reader, even
+      // where the expected body is `{}`. `/api/session` used to answer without
+      // reading, so rows 2 and 4 were true of one route and not the other —
+      // and the mutant for the body limit passed anyway, because /api/resolve
+      // enforced it. A row covered on one route is not a covered row.
       let raw;
       try {
         raw = await readBody(req, LIMITS.maxBodyBytes);
@@ -256,7 +266,18 @@ export function createUiServer({ text, file, token, assets, env, requestId }) {
           res.on("finish", () => req.destroy());
           return fail(res, 413, "too-large", "body too large");
         }
+        res.on("finish", () => req.destroy());
         return fail(res, 408, "timeout", "request body timed out");
+      }
+
+      if (path === "/api/session") {
+        const ws = parseWorkspace(text, file);
+        return send(res, 200, "application/json; charset=utf-8",
+          Buffer.from(JSON.stringify({
+            file,
+            requestId: preselect,
+            requests: ws.requests.map((r) => ({ id: r.id, name: r.name })),
+          })));
       }
 
       let body;

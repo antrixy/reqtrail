@@ -185,6 +185,26 @@ const MUTANTS = [
     "if (req.rawHeaders.length / 2 > LIMITS.maxHeaderCount) {", "if (false) {",
     "killed", "server.mjs"],
 
+  // ROUTE-DISTINGUISHING. The plain body-limit mutant below dies to
+  // /api/resolve whatever /api/session does, so it could not see that the row
+  // was enforced on one route only. This one can.
+  ["server row 2 — the body limit is skipped on /api/session alone",
+    "src/server/server.js",
+    "      let raw;\n      try {\n        raw = await readBody(req, LIMITS.maxBodyBytes);",
+    "      let raw;\n      if (path === \"/api/session\") raw = \"{}\"; else\n      try {\n        raw = await readBody(req, LIMITS.maxBodyBytes);",
+    "killed", "server.mjs"],
+
+  ["server row 4 — the slow-body deadline never fires",
+    "src/server/server.js",
+    "    }, LIMITS.bodyReadTimeoutMs);", "    }, 3_600_000);",
+    "killed", "server-slow.mjs"],
+
+  ["server row 4 — the deadline fires but keeps consuming",
+    "src/server/server.js",
+    "      req.pause();\n      done(reject, new Error(\"slow\"));",
+    "      done(reject, new Error(\"slow\"));",
+    "uncovered", "server-slow.mjs"],
+
   ["server row 2 — the body size limit is removed",
     "src/server/server.js",
     "if (size > limit) {", "if (false) {",
@@ -193,7 +213,7 @@ const MUTANTS = [
   ["server rows 3, 4 — the enforcement interval returns to the 30s default",
     "src/server/server.js",
     "connectionsCheckingInterval: LIMITS.connectionsCheckingIntervalMs,", "",
-    "killed", "server.mjs"],
+    "killed", "server-slow.mjs"],
 
   ["server row 5 — any content type is accepted",
     "src/server/server.js",
@@ -259,7 +279,8 @@ const MUTANTS = [
     "else err(renderRefusal(e.detail));\n    return 0;"],
 ];
 
-const SUITES = ["selftest.mjs", "leak-audit.mjs", "server.mjs", "ui.mjs"];
+const SUITES = ["selftest.mjs", "leak-audit.mjs", "server.mjs",
+  "server-slow.mjs", "ui.mjs"];
 
 // Running every suite against every mutant costs ~13s each, most of it
 // server.mjs's deliberate five-second stalled-header measurement. At forty
