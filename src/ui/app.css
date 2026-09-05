@@ -1,0 +1,166 @@
+/* Plain CSS. No framework, no CDN, and no inline style attributes anywhere —
+   the server's CSP does not permit them, which is deliberate: a rule that is
+   only followed by habit is not a rule.
+
+   The design is an instrument, not a page. Everything that represents bytes is
+   monospaced, because proportional type misrepresents whitespace in a tool
+   whose whole subject is what the bytes are. Colour carries exactly three
+   meanings and nothing else: a transformation happened, something needs
+   attention, something is refused. */
+
+:root {
+  --paper: #f6f7f8;
+  --ink: #14181d;
+  --quiet: #5d6873;
+  --rule: #d8dde2;
+  --signal: #0a6b6b;   /* normalization changed the bytes */
+  --attend: #8a5a00;   /* warning or unresolved */
+  --refuse: #a8201a;   /* refused */
+  --mask: #7a8592;
+
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono",
+          Menlo, Consolas, monospace;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #14181d;
+    --ink: #e6e9ec;
+    --quiet: #98a3af;
+    --rule: #2b333c;
+    --signal: #4fbfbf;
+    --attend: #d9a441;
+    --refuse: #e0796f;
+    --mask: #7a8592;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.shell {
+  max-width: 68rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 5rem;
+}
+
+header { border-bottom: 1px solid var(--rule); padding-bottom: 1.25rem; }
+
+h1 {
+  font-family: var(--mono);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.file {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--quiet);
+  margin: 0.15rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.standing { margin: 0.9rem 0 0; max-width: 46ch; color: var(--quiet); }
+
+h2 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 2.25rem 0 0.6rem;
+  color: var(--quiet);
+}
+
+nav { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 1.25rem 0 0; }
+
+.req {
+  font: inherit;
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  padding: 0.35rem 0.7rem;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.req .id { font-family: var(--mono); font-size: 0.85rem; }
+.req .name { color: var(--quiet); font-size: 0.85rem; }
+.req:hover { border-color: var(--quiet); }
+.req.current { border-color: var(--ink); border-width: 1px; box-shadow: inset 0 -2px 0 var(--ink); }
+.req:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+/* The request block is the memorable element and the only place with weight. */
+.wire {
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  line-height: 1.7;
+  margin: 0;
+  padding: 1rem 1.1rem;
+  border-left: 3px solid var(--ink);
+  background: transparent;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.wire .method { font-weight: 600; }
+.wire .url { overflow-wrap: anywhere; }
+.wire .hname { font-weight: 500; }
+.wire .colon, .wire .hvalue { color: var(--quiet); }
+.wire .hvalue { color: var(--ink); }
+
+.prov {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+
+.prov th {
+  text-align: left;
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--quiet);
+  border-bottom: 1px solid var(--rule);
+  padding: 0 1rem 0.35rem 0;
+}
+
+.prov td {
+  padding: 0.35rem 1rem 0.35rem 0;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.prov .where, .prov .source { color: var(--quiet); }
+.prov .before { color: var(--quiet); }
+.arrow { color: var(--signal); font-weight: 600; }
+.after { color: var(--signal); }
+.masked { color: var(--mask); }
+.unresolved { color: var(--attend); }
+
+.notices { list-style: none; padding: 0; margin: 2rem 0 0; font-size: 0.88rem; }
+
+.notices li {
+  padding: 0.2rem 0 0.2rem 0.85rem;
+  border-left: 2px solid var(--rule);
+}
+
+.notices li.unresolved { border-left-color: var(--attend); color: var(--attend); }
+.notices li.warning { color: var(--quiet); }
+.notices .where { font-family: var(--mono); }
+
+.quiet { color: var(--quiet); }
+.failure { color: var(--refuse); font-family: var(--mono); font-size: 0.9rem; }

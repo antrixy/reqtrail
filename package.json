@@ -1,7 +1,7 @@
 {
   "name": "reqtrail",
-  "version": "0.0.1",
-  "description": "Placeholder. A local, Git-friendly CLI for inspecting and running HTTP requests, with per-value provenance.",
+  "version": "0.1.0",
+  "description": "See the request before it is sent: a local, Git-friendly HTTP request inspector with per-value provenance.",
   "license": "MIT",
   "author": "Maverick Yadav",
   "repository": {
@@ -17,17 +17,40 @@
     "api",
     "cli",
     "request",
-    "provenance"
+    "provenance",
+    "inspector"
   ],
   "type": "module",
   "engines": {
     "node": ">=22"
   },
+  "bin": {
+    "reqtrail": "bin/reqtrail.js"
+  },
   "files": [
+    "bin/",
+    "src/",
+    "dist/",
+    "examples/",
     "README.md",
     "LICENSE"
   ],
+  "scripts": {
+    "build:ui": "node scripts/build-ui.mjs",
+    "test": "node test/selftest.mjs && node test/ui.mjs && node test/parity.mjs && node test/server.mjs",
+    "test:selftest": "node test/selftest.mjs",
+    "test:parity": "node test/parity.mjs",
+    "test:server": "node test/server.mjs",
+    "test:ui": "node test/ui.mjs",
+    "test:mutation": "node test/mutate.mjs",
+    "prepack": "node scripts/build-ui.mjs && node test/selftest.mjs && node test/ui.mjs && node test/parity.mjs"
+  },
   "publishConfig": {
     "access": "public"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
   }
 }

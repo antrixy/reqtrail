@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "variables": {
+    "baseUrl": "https://api.example.com",
+    "userId": "42",
+    "query": "a b"
+  },
+  "requests": [
+    {
+      "id": "get-user",
+      "name": "Get one user",
+      "method": "GET",
+      "url": "{{baseUrl}}/users/{{userId}}?q={{query}}",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{$env.API_TOKEN}}" },
+        { "name": "X-Tag", "value": "alpha" },
+        { "name": "X-Tag", "value": "beta" },
+        { "name": "X-Empty", "value": "" }
+      ]
+    },
+    {
+      "id": "list-users",
+      "name": "List users",
+      "method": "GET",
+      "url": "{{baseUrl}}/users",
+      "headers": [
+        { "name": "Accept-Language", "value": "en-GB" }
+      ]
+    }
+  ]
+}
