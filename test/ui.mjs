@@ -20,7 +20,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-const EXPECTED = 12;
+const EXPECTED = 16;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ui = join(root, "src", "ui");
@@ -105,6 +105,39 @@ await check("the token is read from the fragment, never a query string", () =>
   uiSource.includes("window.location.hash") && !uiSource.includes("location.search"));
 await check("the token is removed from the address bar after it is read", () =>
   uiSource.includes("history.replaceState"));
+// The licence obligation, checked rather than remembered. Both halves: the
+// bundle carries the @license blocks, and a notices file is generated from the
+// build's own module graph so a new dependency cannot slip through unnoticed.
+await check("the bundle preserves the third-party licence notices", () => {
+  const bundle = readFileSync(join(dist, "app.js"), "utf8");
+  return bundle.includes("@license") && bundle.includes("Copyright (c) Meta Platforms");
+});
+await check("a notices file is generated, covering every bundled package", () => {
+  const notices = readFileSync(join(dist, "THIRD_PARTY_NOTICES.md"), "utf8");
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  // react-dom pulls scheduler transitively; the notices are derived from the
+  // module graph, so the check reads the graph too rather than a second list.
+  const named = [...notices.matchAll(/^## (\S+) /gm)].map((m) => m[1]);
+  return Object.keys(pkg.devDependencies)
+    .filter((d) => d !== "esbuild")
+    .every((d) => named.includes(d)) && named.includes("scheduler");
+});
+await check("every notice reproduces a licence, not just a name", () => {
+  const notices = readFileSync(join(dist, "THIRD_PARTY_NOTICES.md"), "utf8");
+  const sections = notices.split(/^## /m).slice(1);
+  return sections.length >= 3 &&
+    sections.every((sec) => /MIT License/i.test(sec) && /Copyright/i.test(sec));
+});
+await check("the package ships what the README points readers at", () => {
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  const readme = readFileSync(join(root, "README.md"), "utf8");
+  // The README names the slice-0 harness and its records as things a reader can
+  // inspect. That was true from a clone and false from an install.
+  const pointed = ["slice0/", "SLICE-0-PREREGISTRATION.md", "SLICE-0-EVIDENCE.md"];
+  return pointed.every((p) => readme.includes(p.replace(/\/$/, "")) &&
+    pkg.files.includes(p));
+});
+
 await check("the built bundle names no fetchable external origin", () => {
   const bundle = readFileSync(join(dist, "app.js"), "utf8");
   const origins = new Set(bundle.match(/https?:\/\/[a-z0-9.-]+/gi) ?? []);

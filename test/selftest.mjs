@@ -3,14 +3,15 @@
 // the run, and so does a check that silently stops executing.
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { resolveWorkspace } from "../src/core/prepare.js";
 import { parseWorkspace, selectRequest } from "../src/core/parse.js";
 import { Refusal } from "../src/core/errors.js";
 
-const EXPECTED = 134;
+const EXPECTED = 135;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -479,6 +480,35 @@ check("the README's worked example is the actual output", () => {
   }
   return true;
 });
+// The README's OPENING COMMAND, run as written against the README's own
+// workspace example. The existing drift check reads a fenced output block and
+// therefore never looked at the first command a reader types — which named a
+// file that did not exist AND omitted a --request the file requires, so it
+// failed twice. A check that covers only the part that looks checkable is how
+// that survived three commits.
+check("the README's first command works, as written", () => {
+  const cmd = readme.match(/\n {4}npx reqtrail (resolve[^\n]*)/);
+  if (!cmd) throw new Error("the opening command is not in the README any more");
+  // THE FILENAME COMES FROM THE README'S INSTRUCTION, NOT FROM THE COMMAND.
+  // The first version of this check wrote the file to whatever name the command
+  // named, so it manufactured the conditions the command needed and could not
+  // fail on a wrong path — it assumed the thing it existed to verify. Taking
+  // the two independently is what makes a mismatch between "save it as X" and
+  // "resolve Y" visible.
+  const saveAs = readme.match(/save the workspace file[^`]*`([^`]+)`/i);
+  if (!saveAs) throw new Error("the README no longer says what to save the file as");
+  const json = readme.match(/```json\n([\s\S]*?)```/)[1];
+  const dir = mkdtempSync(join(tmpdir(), "reqtrail-readme-"));
+  const args = cmd[1].trim().split(/\s+/);
+  writeFileSync(join(dir, saveAs[1]), json);
+  const r = execFileSync(process.execPath, [bin, ...args], {
+    cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+    env: { PATH: process.env.PATH, API_TOKEN: "x" },
+  });
+  rmSync(dir, { recursive: true, force: true });
+  return r.includes("GET https://api.example.com/users/42");
+});
+
 check("the README's workspace example resolves", () => {
   const block = readme.match(/```json\n([\s\S]*?)```/);
   const r = resolveWorkspace(block[1], { env: { API_TOKEN: "x" }, source: "README" });

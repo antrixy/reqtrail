@@ -9,7 +9,12 @@ substituted value came from and what happened to it on the way.
 **0.1.0 sends nothing.** There is no transport in this release. It is the
 inspector; `run` arrives in 0.2.0.
 
-    npx reqtrail resolve example.reqtrail.json
+Save the workspace file from [The workspace file](#the-workspace-file) below as
+`example.reqtrail.json`, then:
+
+    npx reqtrail resolve example.reqtrail.json --request get-user
+
+The same file ships inside the package at `examples/example.reqtrail.json`.
 
 ## What you see
 
@@ -167,6 +172,10 @@ nothing is fetched at runtime.
 
     npm install --no-save playwright-core
     node test/sitting-browser.mjs    the browser sitting
+
+The test suite is in the repository, not in the npm package. The slice-0
+harness and its records **are** in the package, because this file points you at
+them: `slice0/`, `SLICE-0-PREREGISTRATION.md`, `SLICE-0-EVIDENCE.md`.
 
 **Parity** is the load-bearing one: the CLI and the loopback server must produce
 byte-identical output from the same input. It is what makes "the adapters own no

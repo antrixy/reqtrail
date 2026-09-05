@@ -32,8 +32,11 @@
     "src/",
     "dist/",
     "examples/",
+    "slice0/",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "SLICE-0-PREREGISTRATION.md",
+    "SLICE-0-EVIDENCE.md"
   ],
   "scripts": {
     "build:ui": "node scripts/build-ui.mjs",

@@ -5,7 +5,7 @@
 // asset is not: nothing is fetched at runtime.
 
 import { build } from "esbuild";
-import { mkdirSync, copyFileSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, copyFileSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -24,7 +24,7 @@ const result = await build({
   target: ["es2022"],
   jsx: "automatic",
   define: { "process.env.NODE_ENV": '"production"' },
-  legalComments: "none",
+  legalComments: "eof",
   metafile: true,
   logLevel: "warning",
 });
@@ -51,7 +51,43 @@ if (external.length) {
   process.exit(1);
 }
 
+// THIRD-PARTY NOTICES, derived from the bundle rather than from a list somebody
+// maintains. The package set comes out of esbuild's metafile, so a dependency
+// that is added, removed or swapped changes this file automatically and cannot
+// be forgotten.
+//
+// This exists because `legalComments: "none"` shipped React, react-dom and
+// scheduler with no copyright notice at all. MIT requires the notice to travel
+// with substantial copies, so the tarball was distributing code without its
+// licence. The bundle now preserves the @license blocks too — both, because the
+// bundle is minified and a notice nobody can find is a poor discharge of an
+// obligation that exists to be readable.
+const packages = new Set();
+for (const input of Object.keys(result.metafile.inputs)) {
+  const m = input.match(/node_modules\/((?:@[^/]+\/)?[^/]+)\//);
+  if (m) packages.add(m[1]);
+}
+
+const notices = ["# Third-party notices", "",
+  "reqtrail's browser bundle (`dist/app.js`) includes the packages below.",
+  "Their licences are reproduced in full. reqtrail itself is MIT; see LICENSE.",
+  "", "Generated from the build's own module graph, not from a maintained list.",
+  ""];
+for (const name of [...packages].sort()) {
+  const dir = join(root, "node_modules", name);
+  const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+  const licenseFile = ["LICENSE", "LICENSE.md", "LICENCE"]
+    .map((f) => join(dir, f)).find((f) => existsSync(f));
+  if (!licenseFile) {
+    console.error(`build refused: no licence file found for ${name}`);
+    process.exit(1);
+  }
+  notices.push(`## ${name} ${pkg.version}`, "", "```",
+    readFileSync(licenseFile, "utf8").trim(), "```", "");
+}
+writeFileSync(join(dist, "THIRD_PARTY_NOTICES.md"), notices.join("\n"));
+
 const bytes = Object.values(result.metafile.outputs)[0].bytes;
 writeFileSync(join(dist, "BUILD.txt"),
   `esbuild bundle of src/ui/main.jsx\n${bytes} bytes\n`);
-console.log(`built dist/app.js (${bytes} bytes)`);
+console.log(`built dist/app.js (${bytes} bytes), notices for ${[...packages].sort().join(", ")}`);
