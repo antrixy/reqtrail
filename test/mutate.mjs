@@ -293,6 +293,12 @@ const MUTANTS = [
   // `npm test`. If that holds, it is a statement about what the evidence
   // supports, not a to-do.
 
+  ["the ui server reads ambient environment again",
+    "src/server/server.js",
+    "assets: loadAssets(), env, requestId,",
+    "assets: loadAssets(), env: { ...process.env }, requestId,",
+    "killed", "selftest.mjs"],
+
   ["a missing UI build is reported as an internal error again",
     "src/server/server.js",
     '      failToStart("ui.not-built",',

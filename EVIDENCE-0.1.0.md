@@ -14,7 +14,7 @@ their outcomes are added.
     node v22.22.2 · Linux · Chromium (playwright build 1194)
 
     refusals      37/37 carry a literal message
-    selftest     157/157
+    selftest     159/159
     leak audit     0 of 28 fixtures leak
     ui            26/26
     parity         7/7 byte-identical
@@ -189,7 +189,7 @@ it is wanted, and no further specification will.
     npm install --no-save playwright-core
     node test/sitting-browser.mjs
 
-**Two of the 157 selftest checks read this file**, comparing the count above
+**Two of the 159 selftest checks read this file**, comparing the count above
 against the suite's own tripwire and confirming P4 is recorded as falsified. They
 fired on their own introduction — adding them moved the count from 155 to 157 —
 which is the drift they exist to catch, caught immediately. The figures above are

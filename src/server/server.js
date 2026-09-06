@@ -332,14 +332,20 @@ export function newToken() {
   return randomBytes(32).toString("base64url");
 }
 
-export async function startUi({ text, file, requestId, io = process }) {
+// `env` is a parameter, not something this module reads. THIS FILE MUST NOT
+// REFERENCE AMBIENT PROCESS STATE for configuration: the environment is
+// captured once at the CLI composition root and passed down, so `resolve` and
+// `ui` cannot diverge on what they resolved against. A selftest check enforces
+// it, because "remember to pass it" is a habit and this project has twice had
+// to replace a habit with a mechanism.
+export async function startUi({ text, file, requestId, env, io = process }) {
   // Refuses early and identically to any other refusal.
   parseWorkspace(text, file);
 
   const token = newToken();
   // Captured once, for the lifetime of the session.
   const ui = createUiServer({
-    text, file, token, assets: loadAssets(), env: { ...process.env }, requestId,
+    text, file, token, assets: loadAssets(), env, requestId,
   });
   const port = await ui.listen();
 

@@ -11,7 +11,7 @@ import { resolveWorkspace } from "../src/core/prepare.js";
 import { parseWorkspace, selectRequest } from "../src/core/parse.js";
 import { Refusal } from "../src/core/errors.js";
 
-const EXPECTED = 157;
+const EXPECTED = 159;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -491,6 +491,20 @@ check("a refusal in --json mode emits JSON on stderr", () => {
 });
 check("a refusal in --json mode writes nothing to stdout", () =>
   run(["resolve", exFile, "--json"]).stdout === "");
+// The environment is captured once, at the CLI composition root, and passed
+// down. `resolve` took an injected environment while `ui` read ambient state
+// inside the server module and ignored it — the same defect as the first parity
+// failure, one layer up in composition. Comments are stripped, because this
+// change is worth a comment that names `process.env`.
+check("the server module reads no ambient environment", () => {
+  const src = stripComments(readSource("src/server/server.js"));
+  return !/process\.env/.test(src);
+});
+check("the CLI captures the environment once", () => {
+  const src = stripComments(readSource("src/cli/main.js"));
+  return (src.match(/process\.env/g) ?? []).length === 1;
+});
+
 check("exit code 3 is unreachable — no transport exists", () => {
   // COMMENTS STRIPPED, and this is the fourth time on this project that a
   // pattern match has confused a mention with a use — after

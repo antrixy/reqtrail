@@ -89,6 +89,12 @@ export async function main(argv, io = process) {
     return 2;
   }
 
+  // THE COMPOSITION ROOT. Captured once, here, and passed to every consumer —
+  // so `resolve` and `ui` cannot resolve against different environments, and
+  // nothing downstream reads ambient state. The first parity failure was this
+  // same defect one layer down.
+  const env = io.env ?? process.env;
+
   if (opts.command === "help") { out(USAGE); return 0; }
   if (opts.command === "version") { out(`${VERSION}\n`); return 0; }
 
@@ -105,7 +111,9 @@ export async function main(argv, io = process) {
     // resolve-only user never has the loopback listener in their process.
     const { startUi } = await import("../server/server.js");
     try {
-      return await startUi({ text, file: opts.file, requestId: opts.requestId, io });
+      return await startUi({
+        text, file: opts.file, requestId: opts.requestId, env, io,
+      });
     } catch (e) {
       // A bad workspace refuses here exactly as it does under `resolve`. It
       // used to escape this function entirely and print "internal error — this
@@ -125,7 +133,7 @@ export async function main(argv, io = process) {
 
   try {
     const result = resolveWorkspace(text, {
-      requestId: opts.requestId, env: io.env ?? process.env, source: opts.file,
+      requestId: opts.requestId, env, source: opts.file,
     });
     if (opts.json) out(JSON.stringify(result, null, 2) + "\n");
     else out(renderResolve(result));
