@@ -20,6 +20,11 @@
 import { refuse } from "./errors.js";
 import { segment, masked, allResolved } from "./grammar.js";
 import { normalizeUrl, MASK } from "./url.js";
+
+// The set node:http accepts, established by exhaustive measurement over
+// U+0000-U+10FF plus samples above. Written as an allowlist so that a character
+// nobody thought about is refused rather than admitted.
+const HEADER_VALUE_OK = /[\t\u0020-\u007e\u0080-\u00ff]/;
 import { parseWorkspace, selectRequest, SCHEMA_VERSION } from "./parse.js";
 
 // A control-character probe that never materialises a secret it does not have
@@ -51,10 +56,19 @@ export function prepareRequest(request, variables, env) {
     const path = `headers[${n}]`;
     const segs = segment(h.value, path, variables, env);
 
-    // CR, LF and NUL are refused by reqtrail, naming the field path AND the
-    // variable that carried them. A runtime would throw on these, but the error
-    // would arrive with no field path and no variable name — from a tool whose
-    // entire purpose is saying where a value came from.
+    // WHAT THE TRANSPORT WILL ACCEPT, measured rather than recalled.
+    // node:http's validateHeaderValue accepts tab, U+0020-U+007E and
+    // U+0080-U+00FF, and rejects everything else — every other C0 control, DEL,
+    // and everything from U+0100 up, which is all emoji.
+    //
+    // reqtrail refuses the same set, and the reason given is the FILE FORMAT
+    // rather than the transport: a workspace that cannot be sent is one
+    // reqtrail should not call sendable. Accepting now and refusing when `run`
+    // lands would break files that worked, which is the asymmetry the version
+    // field exists to protect against.
+    //
+    // CR, LF and NUL keep their own code. They are a header-injection attempt,
+    // not a typo, and the remedy differs.
     const flat = probe(segs, env);
     if (/[\r\n\0]/.test(flat)) {
       const culprit = segs.find((s) =>
@@ -69,6 +83,38 @@ export function prepareRequest(request, variables, env) {
       refuse("header.control", path,
         "this header value contains CR, LF or NUL");
     }
+    const bad = [...flat].find((ch) => !HEADER_VALUE_OK.test(ch));
+    if (bad !== undefined) {
+      const culprit = segs.find((seg) =>
+        seg.kind !== "literal" && seg.resolved &&
+        [...(seg.secret ? env[seg.key] : seg.value)].some((ch) => !HEADER_VALUE_OK.test(ch)));
+      const point = `U+${bad.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")}`;
+      if (culprit) {
+        refuse("header.charset", path,
+          "the value of $reference contains $codepoint, which the transport " +
+          "will not accept: header values may contain tab, U+0020-U+007E and " +
+          "U+0080-U+00FF",
+          { reference: culprit.written, codepoint: point },
+          culprit.key ?? culprit.name);
+      }
+      refuse("header.charset", path,
+        "this header value contains $codepoint, which the transport will not " +
+        "accept: header values may contain tab, U+0020-U+007E and U+0080-U+00FF",
+        { codepoint: point });
+    }
+
+    // ACCEPTED, and warned about, because it is a display-versus-sent gap
+    // rather than a fault. Measured on a raw socket: `café` leaves as
+    // 63 61 66 e9 — one Latin-1 byte, not UTF-8. A file authored in UTF-8
+    // sends something its author did not intend, and the receiver usually sees
+    // an invalid sequence. Refusing it would be reqtrail inventing policy;
+    // saying nothing would be the failure this product exists to prevent.
+    if (/[\u0080-\u00ff]/.test(flat)) {
+      warnings.push({ code: "header.latin1", path,
+        cause: "this header value contains characters above U+007F, which the " +
+          "transport sends as single Latin-1 bytes rather than UTF-8" });
+    }
+
     if (flat === "") warnings.push({ code: "header.empty", path, cause: "header value is empty" });
     if (flat !== flat.trim()) {
       warnings.push({ code: "header.whitespace", path,

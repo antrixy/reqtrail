@@ -24,7 +24,7 @@ import { createUiServer, newToken } from "../src/server/server.js";
 
 // Fixture count tripwire: a fixture that silently stops running would turn this
 // instrument into one that reports "clean" for a path it no longer tests.
-const EXPECTED_FIXTURES = 26;
+const EXPECTED_FIXTURES = 28;
 
 // After the fix, this file is a regression test: it must exit non-zero while any
 // path leaks. Today it is expected to fail, and the failure IS the measurement.
@@ -34,6 +34,13 @@ const HOSTILE = "\u001b[31mHOSTILE\u001b[0m";   // a terminal escape from the fi
 // is not just JSON.stringify. Mutation testing found that no fixture reached
 // them: removing the DEL/C1 half of the pattern survived every check.
 const HOSTILE_C1 = "a\u007fb\u009fc";
+// C1 ALONE, and this fixture exists because of a coverage regression mutation
+// caught. node:http ACCEPTS U+0080-U+009F, so reqtrail accepts them too — but
+// they are terminal control characters and the renderer escapes them. Once
+// header values were aligned to the transport, every hostile fixture above
+// refused at parse and none reached the renderer, so the escaping had no test
+// left. This one is accepted and must still be escaped on the way out.
+const HOSTILE_ACCEPTED = "a\u009fb\u0085c";
 const dir = mkdtempSync(join(tmpdir(), "reqtrail-leak-"));
 const bin = "bin/reqtrail.js";
 
@@ -81,6 +88,8 @@ const FIXTURES = [
   ["header.control / file value holds CR", ws({ requests: [req({ headers: [{ name: "A", value: `x\r${HOSTILE}` }] })] }), {}, "hostile"],
   ["success path with hostile header value", ws({ requests: [req({ headers: [{ name: "A", value: HOSTILE }] })] }), {}, "hostile"],
   ["success path with DEL and C1 in a header value", ws({ requests: [req({ headers: [{ name: "A", value: HOSTILE_C1 }] })] }), {}, "hostile"],
+  ["success path with C1 alone — accepted by the transport, escaped on display", ws({ requests: [req({ headers: [{ name: "A", value: HOSTILE_ACCEPTED }] })] }), {}, "hostile"],
+  ["a variable carrying C1 into a header value", ws({ variables: { c: HOSTILE_ACCEPTED }, requests: [req({ headers: [{ name: "A", value: "{{c}}" }] })] }), {}, "hostile"],
   ["refusal carrying DEL and C1", ws({ requests: [req({ id: `d${HOSTILE_C1}` })] }), {}, "hostile"],
   ["success path with hostile variable value", ws({ variables: { v: HOSTILE }, requests: [req({ url: "https://a.example/?q={{v}}" })] }), {}, "hostile"],
 ];

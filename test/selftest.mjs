@@ -11,7 +11,7 @@ import { resolveWorkspace } from "../src/core/prepare.js";
 import { parseWorkspace, selectRequest } from "../src/core/parse.js";
 import { Refusal } from "../src/core/errors.js";
 
-const EXPECTED = 147;
+const EXPECTED = 155;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -492,15 +492,70 @@ check("a refusal in --json mode emits JSON on stderr", () => {
 check("a refusal in --json mode writes nothing to stdout", () =>
   run(["resolve", exFile, "--json"]).stdout === "");
 check("exit code 3 is unreachable — no transport exists", () => {
+  // COMMENTS STRIPPED, and this is the fourth time on this project that a
+  // pattern match has confused a mention with a use — after
+  // dangerouslySetInnerHTML, the always-true guard, and the enumerator's line
+  // window. This one fired on a comment reading "node:http's validateHeaderValue"
+  // because the apostrophe completed the pattern's quote. A check that makes
+  // documenting the code impossible gets deleted rather than obeyed.
   const src = ["src/core/prepare.js", "src/core/url.js", "src/core/grammar.js",
     "src/core/parse.js", "src/cli/main.js"]
-    .map((f) => readSource(f)).join("\n");
+    .map((f) => stripComments(readSource(f))).join("\n");
   return !/node:https?["']/.test(src) && !/\bfetch\s*\(/.test(src);
 });
+
+// Removes // and /* */ comments without touching string contents. Small enough
+// to read, which matters: a stripper that silently eats code would make the
+// check above pass for the wrong reason.
+function stripComments(src) {
+  let out = "";
+  let i = 0;
+  let str = null;
+  while (i < src.length) {
+    const c = src[i];
+    if (str) {
+      if (c === "\\") { out += c + (src[i + 1] ?? ""); i += 2; continue; }
+      if (c === str) str = null;
+      out += c; i++; continue;
+    }
+    if (c === '"' || c === "'" || c === "`") { str = c; out += c; i++; continue; }
+    if (c === "/" && src[i + 1] === "/") { while (i < src.length && src[i] !== "\n") i++; continue; }
+    if (c === "/" && src[i + 1] === "*") { i += 2; while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) i++; i += 2; continue; }
+    out += c; i++;
+  }
+  return out;
+}
 
 function readSource(rel) {
   return readFileSync(join(root, rel), "utf8");
 }
+
+// Header values are refused exactly where node:http would refuse them. The set
+// was established by exhaustive measurement, not from documentation.
+check("an ESC is refused", () =>
+  refusal(() => go(one("https://a.example", [{ name: "X", value: "\u001b[31m" }])))
+    .code === "header.charset");
+check("DEL is refused", () =>
+  refusal(() => go(one("https://a.example", [{ name: "X", value: "a\u007fb" }])))
+    .code === "header.charset");
+check("a vertical tab is refused", () =>
+  refusal(() => go(one("https://a.example", [{ name: "X", value: "a\u000bb" }])))
+    .code === "header.charset");
+check("an emoji is refused", () =>
+  refusal(() => go(one("https://a.example", [{ name: "X", value: "hi \u{1F600}" }])))
+    .code === "header.charset");
+check("the refusal names the code point", () =>
+  refusal(() => go(one("https://a.example", [{ name: "X", value: "a\u007fb" }])))
+    .cause.includes("U+007F"));
+check("the refusal names the variable that carried it", () =>
+  refusal(() => go(one("https://a.example", [{ name: "X", value: "{{v}}" }],
+    { v: "a\u007fb" }))).variable === "v");
+check("a tab is accepted — node accepts it", () =>
+  go(one("https://a.example", [{ name: "X", value: "a\tb" }])).resolvable === true);
+check("latin-1 is accepted with a warning, not refused", () => {
+  const r = go(one("https://a.example", [{ name: "X", value: "caf\u00e9" }]));
+  return r.resolvable === true && r.warnings.some((w) => w.code === "header.latin1");
+});
 
 // ------------------------------------------------------------ artifacts ----
 // Content addressing answers "are these bytes identical"; it never answers "is

@@ -124,6 +124,28 @@ const MUTANTS = [
     "src/core/parse.js",
     "refuse(\"selection.ambiguous\", \"requests\",", "return workspace.requests[0]; refuse(\"selection.ambiguous\", \"requests\","],
 
+  ["header values are not checked against the transport's set",
+    "src/core/prepare.js",
+    "const bad = [...flat].find((ch) => !HEADER_VALUE_OK.test(ch));",
+    "const bad = undefined;",
+    "killed", "selftest.mjs"],
+
+  ["the accepted set admits everything above U+00FF",
+    "src/core/prepare.js",
+    "/[\\t\\u0020-\\u007e\\u0080-\\u00ff]/", "/[\\s\\S]/",
+    "killed", "selftest.mjs"],
+
+  ["DEL is admitted by widening the printable range",
+    "src/core/prepare.js",
+    "\\u0020-\\u007e\\u0080", "\\u0020-\\u00ff\\u0080",
+    "killed", "selftest.mjs"],
+
+  ["latin-1 is refused instead of warned",
+    "src/core/prepare.js",
+    'warnings.push({ code: "header.latin1", path,',
+    'refuse("header.charset", path, "latin-1"); warnings.push({ code: "header.latin1", path,',
+    "killed", "selftest.mjs"],
+
   ["CR and LF in a header value are not refused",
     "src/core/prepare.js",
     "if (/[\\r\\n\\0]/.test(flat)) {", "if (/[\\0]/.test(flat)) {"],

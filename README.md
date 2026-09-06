@@ -117,6 +117,18 @@ name no `{{...}}` could reference, CR, LF or NUL in a header value, a duplicate
 request id, **a duplicate key in any object**, and an unrecognised schema
 version.
 
+**Header values are limited to what the transport accepts:** tab, `U+0020`–
+`U+007E` and `U+0080`–`U+00FF`. Anything else — an ANSI escape, DEL, a vertical
+tab, any emoji — is refused, naming the code point and the variable that carried
+it. The set was established by measuring `node:http`, and the rule is stated as
+a property of the workspace format rather than of the transport: a request that
+cannot be sent should not be called sendable.
+
+`U+0080`–`U+00FF` is accepted **and warned about**. Those characters go on the
+wire as single Latin-1 bytes, not UTF-8 — `café` leaves as `63 61 66 e9` — so a
+file authored in UTF-8 sends something its author did not intend. reqtrail tells
+you; it does not decide for you.
+
 A stray `}}` is **not** refused — it is ordinary text. `{{` can only mean the
 start of a template, but `}}` is the end of any nested JSON object, and values
 in a tool like this routinely contain JSON fragments: refusing
