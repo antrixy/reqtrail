@@ -77,6 +77,33 @@ const MUTANTS = [
     "src/core/parse.js",
     "if (doc.version !== SCHEMA_VERSION) {", "if (false) {"],
 
+  ["duplicate JSON members are accepted, last-wins",
+    "src/core/parse.js",
+    "  const dup = findDuplicateMember(text);", "  const dup = null;",
+    "killed", "selftest.mjs"],
+
+  ["the duplicate scanner ignores array indices in the path",
+    "src/core/parse.js",
+    "return parent.array ? `${parent.path}[${parent.index}]` : parent.pending;",
+    "return parent.array ? parent.path : parent.pending;",
+    "killed", "selftest.mjs"],
+
+  ["the duplicate scanner does not track array position",
+    "src/core/parse.js",
+    "if (top?.array) top.index++;", "",
+    "killed", "selftest.mjs"],
+
+  ["string contents are scanned as if they were structure",
+    "src/core/parse.js",
+    "      } else {\n        readString();\n      }",
+    "      } else {\n        i++;\n      }",
+    "killed", "selftest.mjs"],
+
+  ["an unreferenceable variable name is accepted",
+    "src/core/parse.js",
+    "if (!VARIABLE_NAME.test(name)) {", "if (false) {",
+    "killed", "selftest.mjs"],
+
   ["duplicate request ids are first-wins",
     "src/core/parse.js",
     "if (seen.has(id)) {", "if (false) {"],

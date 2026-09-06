@@ -111,10 +111,16 @@ and three refusals leaked as a result. See `LEAK-AUDIT-EVIDENCE.md`.
 not expanded. That is what keeps provenance a flat list rather than a tree, and
 it is the constraint the whole design rests on.
 
-**Anything ambiguous is refused, with a field path and a reason:** unmatched
-braces, whitespace inside a reference, an empty or out-of-charset name, CR, LF
-or NUL in a header value, a duplicate request id, an unrecognised schema
-version. The layers underneath will not refuse these — an unexpanded `{{host}}`
+**Anything ambiguous is refused, with a field path and a reason:** an unclosed
+`{{`, whitespace inside a reference, an empty or out-of-charset name, a variable
+name no `{{...}}` could reference, CR, LF or NUL in a header value, a duplicate
+request id, **a duplicate key in any object**, and an unrecognised schema
+version.
+
+A stray `}}` is **not** refused — it is ordinary text. `{{` can only mean the
+start of a template, but `}}` is the end of any nested JSON object, and values
+in a tool like this routinely contain JSON fragments: refusing
+`{"a":{"b":1}}` in a header value would cost more than the symmetry is worth. The layers underneath will not refuse these — an unexpanded `{{host}}`
 is a perfectly valid hostname to a DNS resolver — so reqtrail does.
 
 ## Exit codes

@@ -11,7 +11,7 @@ import { resolveWorkspace } from "../src/core/prepare.js";
 import { parseWorkspace, selectRequest } from "../src/core/parse.js";
 import { Refusal } from "../src/core/errors.js";
 
-const EXPECTED = 135;
+const EXPECTED = 147;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -119,6 +119,52 @@ check("name is optional and kept", () =>
   go(ws({ requests: [{ id: "r", name: "N", method: "GET", url: "https://a.example" }] }))
     .request.name === "N");
 check("name absent becomes null", () => go(one("https://a.example")).request.name === null);
+
+// JSON is last-wins by specification, so two files that behave differently
+// parse identically and nothing says so. Same argument as duplicate request ids.
+check("a duplicate member at the root refuses", () =>
+  refusal(() => go('{"version":1,"version":2,"requests":[]}')).code
+    === "schema.duplicate-member");
+check("a duplicate inside an array element names the index", () =>
+  refusal(() => go('{"version":1,"requests":[{"id":"r","method":"GET","url":"a","url":"b"}]}'))
+    .path === "requests[0].url");
+check("the second array element is named correctly", () =>
+  refusal(() => go('{"version":1,"requests":[{"id":"a","method":"GET","url":"x"},' +
+    '{"id":"b","method":"GET","url":"y","url":"z"}]}')).path === "requests[1].url");
+check("a duplicate deep inside headers names the full path", () =>
+  refusal(() => go('{"version":1,"requests":[{"id":"r","method":"GET","url":"u",' +
+    '"headers":[{"name":"A","value":"1"},{"name":"B","value":"1","value":"2"}]}]}'))
+    .path === "requests[0].headers[1].value");
+check("a duplicate in a nested object refuses", () =>
+  refusal(() => go('{"version":1,"variables":{"a":"1","a":"2"},"requests":[]}')).path
+    === "variables.a");
+check("the same key at different depths is NOT a duplicate", () =>
+  go('{"version":1,"variables":{"id":"x"},"requests":[{"id":"r","method":"GET",' +
+    '"url":"https://a.example/"}]}').request.id === "r");
+check("a brace inside a string value does not confuse the scanner", () =>
+  refusal(() => go('{"version":1,"requests":[{"id":"r","method":"GET","url":"u",' +
+    '"headers":[{"name":"A","value":"{\\"b\\":1}"}]}],"variables":{"k":"v","k":"w"}}'))
+    .path === "variables.k");
+check("an escaped quote inside a key does not confuse the scanner", () =>
+  refusal(() => go('{"version":1,"variables":{"a\\"b":"1","a\\"b":"2"},"requests":[]}'))
+    .code === "schema.duplicate-member");
+
+// A variable no {{...}} could name does nothing, and a file whose author
+// believes otherwise is the surprise this product exists to remove.
+check("an unreferenceable variable name refuses", () =>
+  refusal(() => go(one("https://a.example", [], {}).replace('"variables":{}',
+    '"variables":{"a b":"x"}'))).code === "schema.variable.charset");
+check("the variable charset matches the grammar's", () =>
+  go(one("https://a.example/{{a-b_1}}", [], { "a-b_1": "ok" })).prepared.url
+    === "https://a.example/ok");
+
+// A stray `}}` is ordinary text, DELIBERATELY. `{{` can only open a template;
+// `}}` closes any nested JSON object, and values here routinely contain JSON.
+check("a stray }} is literal, not refused", () =>
+  go(one("https://a.example", [{ name: "A", value: '{"a":{"b":1}}' }]))
+    .prepared.headers[0].value === '{"a":{"b":1}}');
+check("an unclosed {{ is still refused", () =>
+  refusal(() => go(one("https://a.example/{{x"))).code === "grammar.unmatched");
 
 // ------------------------------------------------------------- selection ----
 

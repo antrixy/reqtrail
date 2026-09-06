@@ -8,8 +8,85 @@ import { refuse } from "./errors.js";
 
 const SCHEMA_VERSION = 1;
 const ID = /^[A-Za-z0-9._-]+$/;
+// The same charset the grammar accepts inside {{...}}. Kept beside the id rule
+// so a change to one is visibly a change to the other.
+const VARIABLE_NAME = /^[A-Za-z0-9_-]+$/;
 // RFC 9110 token.
 const TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
+// DUPLICATE MEMBERS. `JSON.parse` is last-wins by specification, so
+// {"url": "a", "url": "b"} parses to "b" and nothing says so. For a product
+// whose subject is that there will be no surprises about what gets sent, two
+// files that differ in a way that matters must not parse identically in
+// silence — the same argument that refused first-wins for duplicate request ids.
+//
+// Run AFTER JSON.parse has succeeded, so this scanner may assume well-formed
+// input and stays small. It reports the field path of the second occurrence.
+function findDuplicateMember(text) {
+  let i = 0;
+  const stack = [];
+  let expectKey = false;
+
+  // The path of the slot a new container is about to occupy: the key just read
+  // if the parent is an object, or `parent[n]` if it is an array.
+  const slotPath = () => {
+    const parent = stack[stack.length - 1];
+    if (!parent) return "";
+    return parent.array ? `${parent.path}[${parent.index}]` : parent.pending;
+  };
+
+  const readString = () => {
+    let out = "";
+    i++;
+    while (text[i] !== '"') {
+      if (text[i] === "\\") {
+        const c = text[++i];
+        out += c === "u"
+          ? String.fromCharCode(parseInt(text.slice(i + 1, i + 5), 16))
+          : { n: "\n", t: "\t", r: "\r", b: "\b", f: "\f" }[c] ?? c;
+        if (c === "u") i += 4;
+      } else out += text[i];
+      i++;
+    }
+    i++;
+    return out;
+  };
+
+  while (i < text.length) {
+    const c = text[i];
+    if (c === "{") {
+      stack.push({ keys: new Set(), path: slotPath() });
+      expectKey = true;
+      i++;
+    } else if (c === "[") {
+      stack.push({ array: true, index: 0, path: slotPath() });
+      expectKey = false;
+      i++;
+    } else if (c === "}" || c === "]") {
+      stack.pop();
+      expectKey = false;
+      i++;
+    } else if (c === ",") {
+      const top = stack[stack.length - 1];
+      if (top?.array) top.index++;
+      expectKey = Boolean(top && !top.array);
+      i++;
+    } else if (c === '"') {
+      const top = stack[stack.length - 1];
+      if (expectKey && top && !top.array) {
+        const key = readString();
+        const path = top.path ? `${top.path}.${key}` : key;
+        if (top.keys.has(key)) return { path, key };
+        top.keys.add(key);
+        top.pending = path;
+        expectKey = false;
+      } else {
+        readString();
+      }
+    } else i++;
+  }
+  return null;
+}
 
 function isPlainObject(v) {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -51,6 +128,14 @@ export function parseWorkspace(text, source = "workspace") {
   }
   if (!isPlainObject(doc)) refuse("schema.type", source, "expected a JSON object");
 
+  const dup = findDuplicateMember(text);
+  if (dup) {
+    refuse("schema.duplicate-member", dup.path,
+      "the key $key appears more than once in this object; JSON keeps the " +
+      "last one silently, so two files that behave differently would look the " +
+      "same", { key: dup.key });
+  }
+
   only(doc, ["version", "variables", "requests"], "");
 
   // A shipped binary must REFUSE a version it does not recognise rather than
@@ -77,6 +162,15 @@ export function parseWorkspace(text, source = "workspace") {
       refuse("schema.type", "variables", "expected an object of name to string");
     }
     for (const [name, value] of Object.entries(doc.variables)) {
+      // A variable that cannot be referenced is a variable that does nothing,
+      // and a file whose author believes otherwise is exactly the surprise this
+      // product exists to remove. The charset is the grammar's, so the two
+      // cannot drift apart.
+      if (!VARIABLE_NAME.test(name)) {
+        refuse("schema.variable.charset", `variables.${name}`,
+          "$name cannot be referenced: collection variable names are " +
+          "[A-Za-z0-9_-]+, so no {{...}} can name this variable", { name });
+      }
       if (typeof value !== "string") {
         refuse("schema.type", `variables.${name}`,
           "expected a string, got $got; values are substituted verbatim and " +
