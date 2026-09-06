@@ -99,13 +99,19 @@ is one of the failures this tool exists to make visible.
 
 **Two kinds of reference, and they do not compete.** `{{name}}` reads a
 collection variable. `{{$env.NAME}}` reads a process environment variable and is
-treated as a secret: it is held as a reference, and never appears in anything
-reqtrail displays, generates or logs. One place resolves it — the URL
-normalizer, which has to see the real bytes to tell you that normalization
-changed them — and that code returns masked bytes only, including in its
-refusals. Nothing else in the program sees the value. An earlier version of
-this paragraph claimed no code path resolved a secret at all; that was wrong,
-and three refusals leaked as a result. See `LEAK-AUDIT-EVIDENCE.md`.
+treated as a secret: **it never appears in anything reqtrail displays, generates
+or logs.** Resolving it happens inside the core, wherever a decision needs the
+real bytes — normalization has to see them to tell you it changed them, and the
+header checks have to see them to find a control character — and none of those
+values reaches an output. That is checked rather than asserted:
+`test/leak-audit.mjs` drives a marked secret through every refusal and every
+channel and reports zero.
+
+Two earlier versions of this paragraph got it wrong in the same direction. The
+first said no code path resolved a secret at all; three refusals leaked as a
+result. The second said exactly one module resolved one; there are three. **The
+guarantee is about the outputs, not about the module list** — see
+`LEAK-AUDIT-EVIDENCE.md`.
 
 **Substitution is one pass.** A `{{...}}` inside a variable's value is refused,
 not expanded. That is what keeps provenance a flat list rather than a tree, and

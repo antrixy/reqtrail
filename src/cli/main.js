@@ -15,7 +15,7 @@
 
 import { readFileSync } from "node:fs";
 import { resolveWorkspace } from "../core/prepare.js";
-import { Refusal } from "../core/errors.js";
+import { Refusal, StartupFailure } from "../core/errors.js";
 import { renderResolve, renderDiagnostics, renderRefusal } from "./render.js";
 
 export const VERSION = "0.1.0";
@@ -111,6 +111,12 @@ export async function main(argv, io = process) {
       // used to escape this function entirely and print "internal error — this
       // is a bug", which told the user their file was fine and reqtrail was
       // broken.
+      if (e instanceof StartupFailure) {
+        // Exit 2: nothing in the workspace is wrong, so "edit something" would
+        // be the wrong instruction. The command cannot run as invoked.
+        err(`reqtrail: ${e.detail.cause} [${e.detail.code}]\n`);
+        return 2;
+      }
       if (!(e instanceof Refusal)) throw e;
       err(renderRefusal(e.detail));
       return 1;

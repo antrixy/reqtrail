@@ -16,12 +16,14 @@
 // cannot mask a real use.
 
 import { build, transform } from "esbuild";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, cpSync, mkdtempSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { initialSelection, classifyResponse, makeSequencer } from "../src/ui/logic.js";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-const EXPECTED = 26;
+const EXPECTED = 27;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ui = join(root, "src", "ui");
@@ -180,6 +182,34 @@ await check("F7 — a response for the current selection applies once", () => {
   const seq = makeSequencer();
   const t = seq.begin();
   return seq.mayApply(t) === true && seq.lastApplied === t;
+});
+
+// A SOURCE CHECKOUT WITHOUT A BUILD. This path had no check at all: it
+// constructed a workspace Refusal with the pre-template signature, threw, and
+// printed "internal error — this is a bug in reqtrail" while exiting 0 — telling
+// the user their file was fine and reqtrail was broken. It is the failure
+// sitting B fixed for bad schemas, reintroduced one layer over by a signature
+// change made afterwards, and nothing caught it because nothing looked.
+await check("reqtrail ui without a built bundle refuses cleanly", () => {
+  const dir = mkdtempSync(join(tmpdir(), "reqtrail-nobuild-"));
+  for (const d of ["bin", "src", "examples"]) {
+    cpSync(join(root, d), join(dir, d), { recursive: true });
+  }
+  cpSync(join(root, "package.json"), join(dir, "package.json"));
+  let status, out;
+  try {
+    execFileSync(process.execPath,
+      [join(dir, "bin", "reqtrail.js"), "ui", join(dir, "examples", "example.reqtrail.json")],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 15000 });
+    status = 0; out = "";
+  } catch (e) {
+    status = e.status; out = (e.stderr ?? "") + (e.stdout ?? "");
+  }
+  rmSync(dir, { recursive: true, force: true });
+  // Exit 2, not 1: nothing in the workspace is wrong, so "edit something" is the
+  // wrong instruction. And never the internal-error path.
+  return status === 2 && out.includes("ui.not-built") &&
+    out.includes("npm run build:ui") && !out.includes("internal error");
 });
 
 await check("the built bundle names no fetchable external origin", () => {

@@ -293,6 +293,18 @@ const MUTANTS = [
   // `npm test`. If that holds, it is a statement about what the evidence
   // supports, not a to-do.
 
+  ["a missing UI build is reported as an internal error again",
+    "src/server/server.js",
+    '      failToStart("ui.not-built",',
+    '      throw new Refusal({ code: "ui.not-built", path: "dist", cause: "x" }); failToStart("ui.not-built",',
+    "killed", "ui.mjs"],
+
+  ["a missing UI build exits 1, as though the workspace were at fault",
+    "src/cli/main.js",
+    "        err(`reqtrail: ${e.detail.cause} [${e.detail.code}]\\n`);\n        return 2;",
+    "        err(`reqtrail: ${e.detail.cause} [${e.detail.code}]\\n`);\n        return 1;",
+    "killed", "ui.mjs"],
+
   ["UI — a refusal is classified as a result again",
     "src/ui/logic.js",
     'if (body && body.error) return { kind: "refusal", error: body.error };', "",

@@ -11,11 +11,27 @@
 // to report that a secret was re-encoded. Three refusals then quoted the
 // materialised string and put the secret on four output channels.
 //
-// The accurate statement: there is no materialize() for SENDING, because 0.1.0
-// has no transport. `src/core/url.js` is the one place a resolved secret
-// exists, it holds it for the length of one function, and it returns masked
-// bytes and nothing else — including in its refusals. Everything downstream of
-// it, this file included, sees masks only.
+// CORRECTED AGAIN 2026-09-05, and the second correction is the instructive one.
+// The replacement sentence said `src/core/url.js` is THE ONE PLACE a resolved
+// secret exists. That is also false. Measured: eight sites across three modules
+// read `env[key]` —
+//
+//   grammar.js   nested-template check, set-but-empty check
+//   prepare.js   probe(), the control-character scan, the charset scan
+//   url.js       normalization, span attribution
+//
+// A false absolute was replaced with a narrower false absolute, inside a
+// correction whose subject was that an unchecked absolute is what hid a defect.
+// The grep that disproves it is one command and it was not run.
+//
+// THE RULE THAT IS ACTUALLY TRUE, and it is testable rather than architectural:
+// secret bytes exist transiently inside the core's private preparation, wherever
+// a decision needs them, and NEVER in a public result, a rendered view, a
+// refusal, a warning, a protocol response or a log. `test/leak-audit.mjs`
+// checks exactly that across every refusal and every channel — which is why the
+// leak audit stayed green through both wrong sentences. **Containment is a
+// property of the outputs, not of the module list**, and stating it as a module
+// list is what made it wrong twice.
 
 import { refuse } from "./errors.js";
 import { segment, masked, allResolved } from "./grammar.js";

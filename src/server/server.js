@@ -36,7 +36,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { resolveWorkspace } from "../core/prepare.js";
 import { parseWorkspace } from "../core/parse.js";
-import { Refusal } from "../core/errors.js";
+import { Refusal, failToStart } from "../core/errors.js";
 
 export const LIMITS = {
   maxHeaderSize: 16 * 1024,   // row 1 — total header block
@@ -61,11 +61,9 @@ function loadAssets() {
     try {
       return readFileSync(join(dist, name));
     } catch {
-      throw new Refusal({
-        code: "ui.not-built", path: "dist",
-        cause: `${name} is missing; run "npm run build:ui" before "reqtrail ui" ` +
-          "in a source checkout (published packages ship it built)",
-      });
+      failToStart("ui.not-built",
+        `${name} is missing; run "npm run build:ui" before "reqtrail ui" ` +
+        "in a source checkout (published packages ship it built)");
     }
   };
   return new Map([

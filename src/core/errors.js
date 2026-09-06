@@ -68,3 +68,25 @@ export class Refusal extends Error {
 export const refuse = (code, path, template, values, variable) => {
   throw new Refusal({ code, path, template, values, variable });
 };
+
+// A STARTUP failure is not a workspace refusal, and conflating them cost a
+// user-visible defect: `reqtrail ui` with no built bundle constructed a Refusal
+// with the pre-template signature, threw, and printed "internal error — this is
+// a bug in reqtrail" while exiting 0. The user's file was fine and reqtrail
+// said reqtrail was broken — the same failure sitting B fixed for bad schemas,
+// reintroduced one layer over by a signature change made afterwards.
+//
+// Different type, because they need different things: a Refusal names a field
+// path in the user's workspace, and this names something about the
+// installation. There is no field path to give.
+export class StartupFailure extends Error {
+  constructor({ code, cause }) {
+    super(cause);
+    this.name = "StartupFailure";
+    this.detail = { code, cause: escapeControls(cause) };
+  }
+}
+
+export const failToStart = (code, cause) => {
+  throw new StartupFailure({ code, cause });
+};
