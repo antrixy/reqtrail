@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { initialSelection, classifyResponse, makeSequencer } from "./logic.js";
 
 // The session token arrives in the URL FRAGMENT, which browsers never send to a
 // server. It is read once and removed from the address bar, so it survives in
@@ -163,44 +164,34 @@ function App() {
   const [result, setResult] = useState(null);
   const [refusal, setRefusal] = useState(null);
   const [error, setError] = useState(null);
-  // Monotonic, so a slow response for an old selection cannot replace a newer
-  // one. Without it the last response to ARRIVE wins rather than the last
-  // selection made.
-  const seq = useRef(0);
+  // The decisions live in ./logic.js, where they can be tested without a
+  // browser. See UI-LOGIC-EVIDENCE.md.
+  const seq = useRef(makeSequencer());
 
   useEffect(() => {
     api("/api/session")
       .then((s) => {
         setSession(s);
-        // The CLI's --request, honoured. It was parsed, passed to startUi, and
-        // dropped; the UI always showed the first request.
-        //
-        // An UNKNOWN id is selected anyway, deliberately. Falling back to the
-        // first request would show a different request than the one asked for,
-        // silently — the failure this product exists to prevent, committed by
-        // the product. Selecting it lets the core refuse with selection.unknown
-        // and the ids it does have, which is what the CLI does.
-        if (s.requestId !== null && s.requestId !== undefined) {
-          setSelected(s.requestId);
-        } else if (s.requests.length > 0) {
-          setSelected(s.requests[0].id);
-        }
+        const wanted = initialSelection(s);
+        if (wanted !== null) setSelected(wanted);
       })
       .catch((e) => setError(e.message));
   }, []);
 
   const load = useCallback((id) => {
-    const mine = ++seq.current;
+    const mine = seq.current.begin();
     setResult(null);
     setRefusal(null);
     setError(null);
     api("/api/resolve", { requestId: id })
       .then((r) => {
-        if (mine !== seq.current) return;   // a newer selection won
-        if (r && r.error) setRefusal(r.error);
-        else setResult(r);
+        if (!seq.current.mayApply(mine)) return;   // a newer selection won
+        const verdict = classifyResponse(r);
+        if (verdict.kind === "refusal") setRefusal(verdict.error);
+        else if (verdict.kind === "result") setResult(verdict.result);
+        else setError("the server returned something reqtrail cannot read");
       })
-      .catch((e) => { if (mine === seq.current) setError(e.message); });
+      .catch((e) => { if (seq.current.mayApply(mine)) setError(e.message); });
   }, []);
 
   useEffect(() => { if (selected !== null) load(selected); }, [selected, load]);

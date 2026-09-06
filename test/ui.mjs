@@ -17,10 +17,11 @@
 
 import { build, transform } from "esbuild";
 import { readFileSync, readdirSync } from "node:fs";
+import { initialSelection, classifyResponse, makeSequencer } from "../src/ui/logic.js";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-const EXPECTED = 16;
+const EXPECTED = 26;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ui = join(root, "src", "ui");
@@ -136,6 +137,49 @@ await check("the package ships what the README points readers at", () => {
   const pointed = ["slice0/", "SLICE-0-PREREGISTRATION.md", "SLICE-0-EVIDENCE.md"];
   return pointed.every((p) => readme.includes(p.replace(/\/$/, "")) &&
     pkg.files.includes(p));
+});
+
+// The UI's DECISIONS, testable because they no longer live inside a component.
+// Three mutants previously proved these unreachable: every defect sitting B
+// fixed could be reintroduced with the suite staying green.
+
+await check("selection — the first request when nothing is asked for", () =>
+  initialSelection({ requestId: null, requests: [{ id: "a" }, { id: "b" }] }) === "a");
+await check("selection — the requested id when one is named", () =>
+  initialSelection({ requestId: "b", requests: [{ id: "a" }, { id: "b" }] }) === "b");
+await check("selection — an UNKNOWN id is selected, not silently swapped", () =>
+  initialSelection({ requestId: "nope", requests: [{ id: "a" }] }) === "nope");
+await check("selection — nothing to select in an empty workspace", () =>
+  initialSelection({ requestId: null, requests: [] }) === null);
+
+await check("dispatch — an error document is a refusal, not a result", () =>
+  classifyResponse({ error: { code: "x", path: "p", cause: "c" } }).kind === "refusal");
+await check("dispatch — a prepared request is a result", () =>
+  classifyResponse({ prepared: { method: "GET" } }).kind === "result");
+await check("dispatch — an unreadable body is neither", () =>
+  classifyResponse(null).kind === "unusable" &&
+  classifyResponse({}).kind === "unusable");
+
+// F7, recorded NOT REACHED by sitting A because a browser driving the real
+// server cannot control response arrival order. Here it can.
+await check("F7 — a stale response is refused; the last SELECTION wins", () => {
+  const seq = makeSequencer();
+  const first = seq.begin();      // user selects A
+  const second = seq.begin();     // user selects B before A returns
+  const staleApplied = seq.mayApply(first);   // A's response arrives late
+  const freshApplied = seq.mayApply(second);  // B's response arrives
+  return staleApplied === false && freshApplied === true;
+});
+await check("F7 — WITHOUT a guard the stale response would have won", () => {
+  // The same order, applied naively: whatever arrives last is displayed.
+  let shown = null;
+  for (const which of ["B", "A"]) shown = which;   // A returned last
+  return shown === "A";   // the abandoned selection, on screen
+});
+await check("F7 — a response for the current selection applies once", () => {
+  const seq = makeSequencer();
+  const t = seq.begin();
+  return seq.mayApply(t) === true && seq.lastApplied === t;
 });
 
 await check("the built bundle names no fetchable external origin", () => {

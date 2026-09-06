@@ -293,20 +293,25 @@ const MUTANTS = [
   // `npm test`. If that holds, it is a statement about what the evidence
   // supports, not a to-do.
 
-  ["UI — a refusal is rendered as a crash again",
-    "src/ui/main.jsx",
-    "if (r && r.error) setRefusal(r.error);", "if (false) setRefusal(r.error);",
-    "uncovered", "ui.mjs"],
+  ["UI — a refusal is classified as a result again",
+    "src/ui/logic.js",
+    'if (body && body.error) return { kind: "refusal", error: body.error };', "",
+    "killed", "ui.mjs"],
 
   ["UI — an unknown --request silently falls back to the first request",
-    "src/ui/main.jsx",
-    "if (s.requestId !== null && s.requestId !== undefined) {\n          setSelected(s.requestId);",
-    "if (s.requests.some((r) => r.id === s.requestId)) {\n          setSelected(s.requestId);",
-    "uncovered", "ui.mjs"],
+    "src/ui/logic.js",
+    "if (session.requestId !== null && session.requestId !== undefined) {",
+    "if (session.requests.some((r) => r.id === session.requestId)) {",
+    "killed", "ui.mjs"],
 
-  ["UI — the sequence guard is removed",
+  ["UI — the sequence guard admits a stale response",
+    "src/ui/logic.js",
+    "      if (ticket !== issued) return false;", "",
+    "killed", "ui.mjs"],
+
+  ["UI — the component ignores the sequencer's verdict",
     "src/ui/main.jsx",
-    "if (mine !== seq.current) return;   // a newer selection won", "",
+    "if (!seq.current.mayApply(mine)) return;   // a newer selection won", "",
     "uncovered", "ui.mjs"],
 
   ["UI — the session token is left in the address bar",

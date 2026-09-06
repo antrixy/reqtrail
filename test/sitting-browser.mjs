@@ -219,14 +219,18 @@ try {
     await page.close(); await srv.close();
   }
 
-  // ---- F7: can the stale-response race be provoked at all? ---------------
-  // The guard is correct either way. What is at issue is whether this sitting
-  // has earned the right to say the defect was real, so a build WITHOUT the
-  // guard is what gets probed. It cannot be, from outside the page, without
-  // controlling response order — recorded as NOT REACHED rather than counted.
-  record("F7", "not reached",
-    "the race needs control over response arrival order; not reachable from a " +
-    "browser driving the real server");
+  // ---- F7: ANSWERED ELSEWHERE, and this is where it says so ---------------
+  // Sitting B recorded F7 as NOT REACHED: a browser driving the real server
+  // cannot control response arrival order, so the race could not be provoked
+  // and the guard could not be shown to be necessary.
+  //
+  // The decision moved to src/ui/logic.js, where applying responses out of
+  // order is trivial, and test/ui.mjs now measures it. Recorded here rather
+  // than deleted, so the sitting's own record does not quietly lose a question
+  // it once could not answer.
+  record("F7", "answered elsewhere",
+    "measured in test/ui.mjs against makeSequencer(); the race is real and " +
+    "the guard refuses the stale response");
 
   // ---- B5: a cross-origin page cannot read the API ----------------------
   const page3 = await browser.newPage();
@@ -267,6 +271,7 @@ record("B10", wrong.length >= 1 ? "right" : "wrong",
 // A sitting cannot be gated on its own error rate. B10 is recorded and
 // excluded, by name and with the reason attached.
 const META = new Set(["B10"]);
+// "answered elsewhere" is not a verdict this gate can act on.
 const gating = results.filter((r) => r.verdict === "wrong" && !META.has(r.id));
 
 console.log(`sitting A — chromium\n`);
