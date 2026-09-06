@@ -1,197 +1,200 @@
 # 0.1.0 — evidence
 
-**Run 2026-09-05.** Predictions frozen in `PREREGISTRATION-0.1.0.md` and
-`SITTING-A-PREREGISTRATION.md`, both committed before the code they describe was
-written.
+**Regenerated 2026-09-05 from a run against commit `490fee1`, fetched as a
+sha-pinned archive rather than read from a working tree.**
 
-    Node v22.22.2 · Linux
-    Browser: Chromium (playwright-core build 1194)
-    selftest  129/129
-    ui         12/12
-    parity      7/7   byte-identical
-    server     50/50
-    mutation   22/22  accounted for, one of them an expected equivalent
-    sitting A  9/10   predictions held on the second run; see B3
+This replaces the version written on 2026-09-05 before an external review. That
+one reported 129 checks against a suite that runs 155, and its central claim was
+false: **P4 was falsified.** It carried a correction block saying so, which is
+the wrong shape for a document a stranger reads first to decide whether the
+release's claims are backed. Regenerated rather than edited, so every figure
+below comes from one run. **The original predictions keep their wording**; only
+their outcomes are added.
+
+    node v22.22.2 · Linux · Chromium (playwright build 1194)
+
+    refusals      37/37 carry a literal message
+    selftest     157/157
+    leak audit     0 of 28 fixtures leak
+    ui            26/26
+    parity         7/7 byte-identical
+    server        51/51
+    server-slow    2/2  (shipped timeout values)
+    mutation      58/58 accounted for — 55 killed, 1 equivalent, 2 uncovered, 219s
+    sitting A     14/16 predictions held, exit 0
+    tarball       106.0 kB, 30 files, zero runtime dependencies
 
 ---
 
-## Predictions
+## 1. The 0.1.0 predictions
+
+Frozen in `PREREGISTRATION-0.1.0.md` before the code they describe was written.
 
 | # | Prediction | Result |
 | --- | --- | --- |
-| P1 | `new URL()` accepts a literal `{{host}}` in the host position | **right** — parses; "does it parse" cannot detect an unresolved reference |
-| P2 | Braces encode in a path, pass through in a query | **right** — `%7B%7Bx%7D%7D` vs unchanged |
+| P1 | `new URL()` accepts a literal `{{host}}` in the host position | **right** |
+| P2 | Braces encode in a path, pass through in a query | **right** |
 | P3 | Identical name **and** value survive as two header entries | **right** |
-| P4 | No secret in any reqtrail-generated output | **right** — human render, `--json`, warnings, errors, and the loopback API |
+| P4 | No secret in any reqtrail-generated output | **WRONG — see §2** |
 | P5 | An unresolved reference exits 1 and still prints a parseable payload | **right** |
-| P6 | Node's default timeouts are too permissive; ours must do the work | **right**, and it understated the problem — see below |
-| P7 | An oversized header block is rejected with a status, not a bare reset | **right** — 431 before any handler runs |
+| P6 | Node's default timeouts are too permissive; ours must do the work | **right**, and it understated the problem |
+| P7 | An oversized header block is rejected with a status, not a bare reset | **right** — 431 |
 | P8 | A foreign `Host` reaches our handler; the rebinding defence must be ours | **right** |
-| P9 | `Origin` absent on navigation, present on `fetch` | **half wrong** — reached in sitting A as B2 and B3; see B3 |
+| P9 | `Origin` absent on navigation, present on `fetch` | **half wrong** — see §2 |
 | P10 | **The first parity run fails** | **right** |
-| P11 | The shipped bundle contains no `dangerouslySetInnerHTML` | **WRONG** — it contains one |
-| P12 | At least two of P1–P11 wrong | **right** — two, counting P9's failed half |
+| P11 | The shipped bundle contains no `dangerouslySetInnerHTML` | **WRONG** |
+| P12 | At least two of P1–P11 wrong | **right** — three, counting P9's half |
 
----
+## 2. P4 was falsified, and that is the most important line in this file
 
-## P11 was wrong, and the pre-registration is why that was useful
+**As written:** *for a resolved secret of ≥8 characters, no reqtrail-generated
+output contains it as a substring — human render, `--json`, warnings, errors.*
 
-The prediction named its own consequence: *if the string appears, the bundle grep
-is void as a check and only the source check is valid.* It appears — react-dom
-implements the property and names it, so **a grep of the shipped bundle can
-never pass.**
+It was checked against a fixed set of fixtures in which the secret was always
+well-formed, so it exercised the success path and reported a property. **Three
+refusal paths disclosed the resolved secret**, on four channels each including
+the loopback API — which also broke a named UI security row, since secrets are
+not to cross that boundary in plaintext.
 
-Written the other way round, this would have gone badly. The natural order is to
-write the check, see it fail, decide it is noisy, and drop it — leaving the
-prohibition untested while the commit message says it is tested. Deciding what a
-failure would mean before running it is the only reason that did not happen.
+The root cause was not an oversight. `src/core/url.js` must materialise a secret,
+because normalization has to see real bytes to report that a query-string key was
+re-encoded. That exception was understood and written down inside the module —
+and then `parse()` interpolated the materialised string into a refusal, and it
+left. Meanwhile `src/core/prepare.js` and the README both said no code path
+resolved a secret at all. **Two artifacts of my own, neither citing the other,
+describing incompatible designs.**
 
-**What ships instead:** a bundle of `src/ui` alone with react and react-dom
-external. It covers every current and future UI file without depending on anyone
-remembering to add one, and react's internals cannot mask a real use. A planted
-use is compiled in the same test to show the check can fail. The shipped-bundle
-grep is kept, **asserted in the opposite direction**, so that if react ever stops
-naming the property this file says so rather than silently acquiring a check that
-means nothing.
+Fixed by making refusals carry values as named fields with escaping at a single
+chokepoint. `test/leak-audit.mjs` drives marked values through every refusal and
+every channel and now reports **0 of 28**. Re-measured on this artifact:
 
-## P10 was right, and what the first parity run found
+    reqtrail: url: "https://••••/" is not a valid absolute URL [url.invalid]
+    leak present: 0
 
-Two fixtures disagreed, on every masked secret. The cause was not the adapters:
-**the harness gave them different environments** — the CLI subprocess had
-`API_TOKEN`, the server read the test process's own. The environment is part of
-the input to a parity comparison, and the comparison was not being given one
-input.
+Full account in `LEAK-AUDIT-EVIDENCE.md` and `LEAK-FIX-EVIDENCE.md`.
 
-That is the slice-0 near-miss again — the harness rather than the target being
-the thing that differs — and it is the second time on this project that the
-first reading was a property of the measurement.
+## 3. P9 and P11, both instructive
 
-It also found something real. The server adapter was reading `process.env`
-**inside a request handler**, which is precisely the "configuration read from
-process state" that SPEC lists among the terminal assumptions a core acquires
-when a second interface is deferred. The environment is now captured once per
-session and passed in. A parity test written last would have found neither.
+**P9 — half wrong, and the half that failed was a security hole.** `Origin` is
+absent on a top-level navigation, as predicted. It is **also absent on a
+same-origin GET**, which the prediction did not anticipate: Chromium sends none.
+The Origin check on `GET /api/session` therefore permitted an absent header and
+protected nothing. Measured in a browser; a Node client cannot see it, because
+node's `fetch` sends no `Origin` either and the endpoint tested green. The API is
+now POST-only with `Origin` required and exact.
 
-## P6 was right and understated
+**P11 — wrong, and its falsification clause is why that was useful.** It named
+its own consequence: *if the string appears, the bundle grep is void as a check
+and only the source check is valid.* It appears — react-dom implements the
+property and names it. What ships instead is a bundle of `src/ui` alone with
+react external, which no comment can fool, plus a planted use proving the check
+can fail. The shipped-bundle grep is kept **asserted in the opposite direction**,
+so that if react ever stops naming the property this file says so rather than
+silently acquiring a check that means nothing.
 
-`requestTimeout` and `headersTimeout` were set to 10s and 5s. They are enforced
-by a poller whose default interval is **30 seconds**, so a 5-second header
-timeout without `connectionsCheckingInterval` buys a timeout that fires up to
-thirty seconds late. Setting the two documented properties is the obvious half of
-rows 3 and 4 and is not the whole row.
+**P10 — right, and the first parity run found two things.** The harness gave the
+two adapters different environments; and the server adapter was reading
+`process.env` inside a request handler, which is the "configuration read from
+process state" SPEC lists among the terminal assumptions a core acquires when a
+second interface is deferred. A parity test written last would have found neither.
 
-**A false pass was nearly recorded here.** The first probe of the stalled-header
-case appeared to succeed — the socket closed at 1004ms with a 408. It was not
-reproducible: `headersTimeout` mutated **after** `listen()` is not picked up by
-the connection tracker, so the check was passing for a reason unrelated to what
-it claimed to test, and only intermittently. The check now uses the shipped
-values and takes five seconds. Measured: closed at 5006ms with a 408.
+**P6 — right and understated.** `requestTimeout` and `headersTimeout` are
+enforced by a poller whose default interval is 30 seconds, so setting a 5-second
+header timeout without `connectionsCheckingInterval` buys a timeout that fires up
+to thirty seconds late. A false pass was nearly recorded here: the first probe
+appeared to succeed and was not reproducible, because a timeout mutated after
+`listen()` is not picked up.
 
-Same lesson as slice 0's, arriving from the third direction now: *check every
-component that touches the artifact.* Here the component was the test's own
-attempt to be fast.
+## 4. Slice 0 still reproduces from this artifact
 
----
+Run from `slice0/` at this commit:
 
-## Mutation coverage
+    predictions falsified: P4, P8      matches SLICE-0-EVIDENCE.md: true
+    sent 9, all display == capture: true
+    refused 7, any refusal reached the wire: false
 
-22 mutants, each a single edit breaking a stated contract. 21 killed.
+**But what slice 0 established is narrower than it claimed.** `slice0/run.mjs`
+converts the ordered header array into a JavaScript object before handing it to
+`node:http`, so the transport was measured through a lossy adapter. Measured on a
+raw socket: the object form loses one of `X-Tag`/`x-tag`, joins duplicate
+`Cookie` values with `; `, and reorders numeric field names. The flat raw array
+preserves all three.
 
-**One survivor, and it is equivalent.** Removing
-`if (outer + produced + suffix !== href) continue;` from `src/core/url.js`
-changed nothing. It cannot fire: `produced` is sliced out of `href` between an
-offset proved by `startsWith(outer)` and one proved by `endsWith(suffix)`, with
-a length guard ensuring the first does not pass the second, so the three pieces
-concatenate to `href` for every input.
+The conclusion — `node:http`, not `fetch` — stands. **`run` must pass the raw
+array and re-test against a capture**, and `node:https` is exercised by nothing.
 
-The comment above that line called it **"the whole guarantee"**, which was
-wrong — the guarantee is carried by the two preceding guards. The comment is
-corrected and the mutant is now recorded as an expected equivalent, asserted in
-that direction: a run in which it **dies** fails, because that would mean the
-equivalence argument no longer holds.
+## 5. The browser sitting
 
----
+14 of 16 predictions held; the gate is exit 0.
 
-## Sitting A — the browser pass
+B1–B9 cover rendering, `Origin` on navigation and on fetch, the rebinding
+endgame refused by the `Host` check, a cross-origin page unable to read the API,
+no secret in the DOM, no cookies, the token removed from the address bar, and the
+CSP blocking an injected inline script. F1–F6 cover the refusal contract: a
+grammar refusal and an unknown request id both render code, path and cause with
+zero page errors, an empty workspace says so, `--request` is honoured, and **a
+refusal carrying a secret puts nothing in the DOM** — the channel the leak audit
+could not reach until the UI stopped rendering a blank page on every refusal.
 
-Predictions in `SITTING-A-PREREGISTRATION.md`. Two runs are recorded because the
-first changed the design.
+**F7 is answered elsewhere, and says so.** The stale-response race could not be
+provoked through a browser driving the real server. The decision now lives in
+`src/ui/logic.js` and `test/ui.mjs` measures it: the race is real, and the guard
+refuses the stale response.
 
-### B3 was wrong, and it was a security finding
+**B10 is wrong on this run.** It predicted at least one of B1–B9 would be wrong;
+none was. It was right on its first run, when it caught a real defect, and that
+is what it is for — establishing that the harness can fail. A clean second run is
+evidence a known defect was fixed, not that the predictions were good.
 
-> B3 — `Origin` is present and exactly `http://127.0.0.1:PORT` on every `fetch`
-> the application makes.
+## 6. Mutation
 
-**Observed on the first run:** two API calls, origins `[null, "http://127.0.0.1:PORT"]`.
+58 mutants, 219 seconds. 55 killed, and three that must survive:
 
-Chromium sends **no `Origin` header on a same-origin GET**. `GET /api/session`
-therefore arrived without one — and the server, which had to allow an absent
-`Origin` for top-level navigations, allowed it. **The Origin check on that
-endpoint was vacuous.** It looked like a defence, tested green from a Node
-client, and protected nothing.
+- **One equivalent.** A reconstruction check in `src/core/url.js` is a tautology
+  given the two guards above it. The comment that used to call it "the whole
+  guarantee" was wrong and is corrected. Asserted in that direction: a run in
+  which it **dies** fails.
+- **Two uncovered**, each with its argument attached. The component's wiring to
+  the extracted UI decisions, which needs a browser; and continued consumption
+  after a 413, which nothing in the suite can observe.
 
-**Two changes, both applied:**
+Marking them is the difference between a gap that is known and one that is merely
+absent: if a browser check ever lands in CI, the harness reports the status
+change rather than quietly gaining coverage nobody notices.
 
-- The API is **POST only**, including the read-only session endpoint, so a
-  browser always attaches `Origin`. The verb is a security property here, not a
-  REST opinion.
-- On `/api/*`, `Origin` must be **present and exact**; absent is refused. Static
-  routes still permit an absent `Origin`, because a navigation has none — B2,
-  measured right — and there is nothing to read there.
+## 7. What this establishes, and what it does not
 
-**Second run: B3 right**, two API calls, one origin, exact.
-
-This is the row 4 half that a Node client cannot reach: node's `fetch` sends no
-`Origin` at all, so from Node the endpoint was indistinguishable from a working
-one. Asserting the browser's behaviour from a client that cannot exhibit it is
-the slice-0 receiver mistake, and this is what it would have cost.
-
-### The rest
-
-| # | Result |
-| --- | --- |
-| B1 | **right** — the request block and all four provenance rows render, no page errors |
-| B2 | **right** — `Origin` absent on the navigation to `GET /` |
-| B4 | **right** — `http://localhost:PORT/` refused with `bad-host`; the application does not load |
-| B5 | **right** — a page on another origin cannot read `/api/session`; the fetch rejects and the server logged the foreign origin |
-| B6 | **right** — no secret anywhere in the DOM |
-| B7 | **right** — `document.cookie` empty, cookie jar empty |
-| B8 | **right** — token removed from the address bar; a reload without it fails to authenticate |
-| B9 | **right** — an injected inline script is blocked by the CSP |
-| B10 | **right on run 1, wrong on run 2** |
-
-**B10 recorded honestly.** It predicted at least one of B1–B9 would be wrong.
-On the first run one was, which is what the prediction was for: it establishes
-that the harness can fail. On the second run, after the fix, none was — so B10
-is wrong on that run. The second run is not independent evidence that the
-predictions were good; it is evidence that a known defect was fixed.
-
-**What B4 does not establish.** True DNS rebinding cannot be staged locally.
-What was staged is its endgame: a request the browser considers same-origin
-carrying a `Host` the server does not accept. The browser's own view during
-rebinding is not reproduced and is not claimed.
-
----
-
-## What this does and does not establish
-
-> **CORRECTION, 2026-09-05.** Two statements below are wrong and are left in
-> place rather than rewritten. **P4 is falsified**: three refusals in
-> `src/core/url.js` disclosed a resolved environment secret on four channels,
-> including across the loopback boundary. The claim that "no resolved secret
-> exists on the display side at all" was false — the URL normalizer must
-> materialise, and the sentence hid that. **The counts are stale**: the suite
-> ran 129 checks when this was written and runs 133 now, because four were added
-> afterwards and this file was not regenerated. Both are recorded in
-> `LEAK-AUDIT-EVIDENCE.md` and fixed in `LEAK-FIX-EVIDENCE.md`.
-
-**Established.** The prepared request, the provenance, and every refusal behave
-as SPEC specifies; the CLI and the loopback server produce byte-identical output
-from the same input; no resolved secret exists on the display side at all,
-because 0.1.0 has no transport and therefore no `materialize()`; the seven UI
-security rows hold against both a hand-written socket and a real browser.
+**Established on this artifact.** The prepared request, the provenance and every
+refusal behave as SPEC specifies. The CLI and the loopback server produce
+byte-identical output from the same input. No reqtrail-generated output discloses
+a resolved secret on any of five channels, across 28 fixtures. Header values are
+refused exactly where `node:http` refuses them, a set established by exhaustive
+measurement. Duplicate object members are refused at any depth with the full
+field path. The seventeen server and UI security rows hold against a hand-written
+socket and a real browser. The tarball installs with zero runtime dependencies
+and carries its third-party licence notices.
 
 **Not established.** That the prepared request matches a captured one — that is
-slice 0's result, not this release's, and 0.1.0 has no transport with which to
-reproduce it. That anyone wants this. Slice 0 said the claim is true; nothing
-here says it is wanted, and no further specification will.
+slice 0's result, qualified in §4, and 0.1.0 has no transport with which to
+reproduce it. That the UI's wiring is correct, which rests on a sitting run by
+hand. That anyone wants this. Slice 0 said the claim is true; nothing here says
+it is wanted, and no further specification will.
+
+## 8. Reproducing this
+
+    curl -sSL https://codeload.github.com/antrixy/reqtrail/tar.gz/490fee10ee67b51581a34cb83ada9a0cac56d634 | tar xz
+    npm ci && npm test
+    npm run test:mutation
+
+    npm install --no-save playwright-core
+    node test/sitting-browser.mjs
+
+**Two of the 157 selftest checks read this file**, comparing the count above
+against the suite's own tripwire and confirming P4 is recorded as falsified. They
+fired on their own introduction — adding them moved the count from 155 to 157 —
+which is the drift they exist to catch, caught immediately. The figures above are
+from the run made after they were added.
+
+Every pre-registration in this repository was committed before the run it
+describes. Wrong predictions keep their original wording; there are eleven of
+them across nine sittings, and each is recorded with what it cost.

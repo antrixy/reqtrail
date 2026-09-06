@@ -11,7 +11,7 @@ import { resolveWorkspace } from "../src/core/prepare.js";
 import { parseWorkspace, selectRequest } from "../src/core/parse.js";
 import { Refusal } from "../src/core/errors.js";
 
-const EXPECTED = 155;
+const EXPECTED = 157;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -617,6 +617,24 @@ check("the README's workspace example resolves", () => {
 });
 check("the README does not claim this release sends anything", () =>
   readme.includes("0.1.0 sends nothing"));
+// The evidence document drifted to 129 against a suite of 155 once already, and
+// a stranger reads it first to decide whether the release's claims are backed.
+// The counts it quotes are checkable, so they are checked — the same argument as
+// the README's worked example.
+check("EVIDENCE-0.1.0.md quotes this suite's actual count", () => {
+  const ev = readSource("EVIDENCE-0.1.0.md");
+  const m = ev.match(/selftest\s+(\d+)\/(\d+)/);
+  if (!m) throw new Error("EVIDENCE-0.1.0.md no longer quotes a selftest count");
+  if (Number(m[2]) !== EXPECTED) {
+    throw new Error(`EVIDENCE says ${m[1]}/${m[2]}, suite runs ${EXPECTED}`);
+  }
+  return true;
+});
+check("EVIDENCE-0.1.0.md records P4 as falsified, not as held", () => {
+  const ev = readSource("EVIDENCE-0.1.0.md");
+  return /\|\s*P4\s*\|[^|]*\|\s*\*\*WRONG/.test(ev);
+});
+
 check("the version in package.json is the version the CLI reports", () => {
   const pkg = JSON.parse(readSource("package.json"));
   return pkg.version === run(["--version"]).stdout.trim();
