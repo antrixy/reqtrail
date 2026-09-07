@@ -15,9 +15,9 @@ const MASK = "\u2022\u2022\u2022\u2022";
 // Showing `\u001b[31m` rather than emitting it is also the more accurate
 // rendering: it is what the header value contains.
 
-export function renderPrepared(result) {
-  const lines = [`${result.prepared.method} ${esc(result.prepared.url)}`];
-  for (const h of result.prepared.headers) {
+export function renderProjection(result) {
+  const lines = [`${result.projection.method} ${esc(result.projection.url)}`];
+  for (const h of result.projection.headers) {
     lines.push(`${esc(h.name)}: ${esc(h.value)}`);
   }
   return lines.join("\n");
@@ -53,7 +53,7 @@ export function renderProvenance(result) {
 }
 
 export function renderResolve(result) {
-  const parts = [renderPrepared(result)];
+  const parts = [renderProjection(result)];
   const prov = renderProvenance(result);
   if (prov) parts.push("", prov);
   if (!result.urlResolved) {
