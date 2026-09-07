@@ -30,11 +30,11 @@ export function initialSelection(session) {
 //
 // A core refusal arrives as 200 with an `error` document, because the CALL
 // succeeded and its result is a refusal — the same distinction the CLI draws
-// when a 4xx response exits 0. Reading `prepared` off an error document is what
-// produced a blank white page on every refusal.
+// when a 4xx response exits 0. Reading the projection off an error document is
+// what produced a blank white page on every refusal.
 export function classifyResponse(body) {
   if (body && body.error) return { kind: "refusal", error: body.error };
-  if (body && body.prepared) return { kind: "result", result: body };
+  if (body && body.projection) return { kind: "result", result: body };
   return { kind: "unusable" };
 }
 

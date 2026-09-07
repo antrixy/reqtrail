@@ -50,13 +50,13 @@ async function api(path, body = {}) {
   return parsed;
 }
 
-function RequestLine({ prepared }) {
+function RequestLine({ projection }) {
   return (
     <pre className="wire">
       <code>
-        <span className="method">{prepared.method}</span>{" "}
-        <span className="url">{prepared.url}</span>
-        {prepared.headers.map((h, i) => (
+        <span className="method">{projection.method}</span>{" "}
+        <span className="url">{projection.url}</span>
+        {projection.headers.map((h, i) => (
           <span key={i} className="header-line">
             {"\n"}
             <span className="hname">{h.name}</span>
@@ -237,7 +237,7 @@ function App() {
       {result && (
         <article>
           <h2>The request that would be sent</h2>
-          <RequestLine prepared={result.prepared} />
+          <RequestLine projection={result.projection} />
           {!result.urlResolved && (
             <p className="quiet">
               The URL is shown as written. It contains an unresolved reference,
