@@ -2,7 +2,7 @@
 // calls this server, which calls the core, and every mitigation lives here.
 //
 // `reqtrail ui` is by construction a local service that reads a workspace and
-// returns prepared requests. If a web page could drive it, that is an
+// returns request projections. If a web page could drive it, that is an
 // internal-network primitive. The attack is DNS REBINDING: a malicious site
 // resolves its own hostname to 127.0.0.1, and from the browser's view its
 // script is then same-origin. Origin protections do not help. The Host and
