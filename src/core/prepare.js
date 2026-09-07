@@ -1,4 +1,4 @@
-// One construction site. One PreparedRequest. Consumed by every renderer.
+// One construction site. One projection. Consumed by every renderer.
 //
 // A `resolve` that builds its own view can be right in every test and wrong on
 // the one request that matters, and that failure would be invisible because
@@ -206,7 +206,7 @@ export function prepareRequest(request, variables, env) {
 
   return {
     request: { id: request.id, name: request.name },
-    prepared: {
+    projection: {
       method: request.method,
       url: urlView.display,
       headers: headerSegs.map((h) => ({ name: h.name, value: masked(h.segs) })),
