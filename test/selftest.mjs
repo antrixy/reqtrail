@@ -85,9 +85,9 @@ check("variables must be strings", () =>
 check("non-string variable names the path", () =>
   refusal(() => go(one("https://a.example", [], { n: 42 }))).path === "variables.n");
 check("variables optional", () =>
-  go(ws({ requests: [{ id: "r", method: "GET", url: "https://a.example" }] })).prepared.method === "GET");
+  go(ws({ requests: [{ id: "r", method: "GET", url: "https://a.example" }] })).projection.method === "GET");
 check("headers optional", () =>
-  go(ws({ requests: [{ id: "r", method: "GET", url: "https://a.example" }] })).prepared.headers.length === 0);
+  go(ws({ requests: [{ id: "r", method: "GET", url: "https://a.example" }] })).projection.headers.length === 0);
 check("duplicate id refuses", () =>
   refusal(() => go(ws({ requests: [
     { id: "r", method: "GET", url: "https://a.example" },
@@ -155,14 +155,14 @@ check("an unreferenceable variable name refuses", () =>
   refusal(() => go(one("https://a.example", [], {}).replace('"variables":{}',
     '"variables":{"a b":"x"}'))).code === "schema.variable.charset");
 check("the variable charset matches the grammar's", () =>
-  go(one("https://a.example/{{a-b_1}}", [], { "a-b_1": "ok" })).prepared.url
+  go(one("https://a.example/{{a-b_1}}", [], { "a-b_1": "ok" })).projection.url
     === "https://a.example/ok");
 
 // A stray `}}` is ordinary text, DELIBERATELY. `{{` can only open a template;
 // `}}` closes any nested JSON object, and values here routinely contain JSON.
 check("a stray }} is literal, not refused", () =>
   go(one("https://a.example", [{ name: "A", value: '{"a":{"b":1}}' }]))
-    .prepared.headers[0].value === '{"a":{"b":1}}');
+    .projection.headers[0].value === '{"a":{"b":1}}');
 check("an unclosed {{ is still refused", () =>
   refusal(() => go(one("https://a.example/{{x"))).code === "grammar.unmatched");
 
@@ -204,7 +204,7 @@ check("out-of-charset name refuses", () =>
 check("bad env name refuses", () =>
   refusal(() => go(one("https://a.example/{{$env.9x}}"))).code === "grammar.charset");
 check("names are case sensitive", () =>
-  go(one("https://a.example/{{X}}", [], { X: "1", x: "2" })).prepared.url.endsWith("/1"));
+  go(one("https://a.example/{{X}}", [], { X: "1", x: "2" })).projection.url.endsWith("/1"));
 check("nested template in a variable refuses", () =>
   refusal(() => go(one("https://a.example/{{a}}", [], { a: "{{b}}", b: "z" })))
     .code === "grammar.nested");
@@ -216,11 +216,11 @@ check("grammar refusal names the header path", () =>
   refusal(() => go(one("https://a.example", [{ name: "a", value: "{{ x }}" }])))
     .path === "headers[0]");
 check("literal braces are not templates", () =>
-  go(one("https://a.example/x?j=%7B%22a%22%3A1%7D")).prepared.url.includes("%7B%22a%22"));
+  go(one("https://a.example/x?j=%7B%22a%22%3A1%7D")).projection.url.includes("%7B%22a%22"));
 
 // ------------------------------------------------------- url normalization ----
 
-const url = (u, vars = {}, env = {}) => go(one(u, [], vars), env).prepared.url;
+const url = (u, vars = {}, env = {}) => go(one(u, [], vars), env).projection.url;
 
 check("space in path encodes", () => url("https://a.example/a b") === "https://a.example/a%20b");
 check("space in query encodes", () => url("https://a.example/x?q=a b") === "https://a.example/x?q=a%20b");
@@ -325,7 +325,7 @@ const withSecret = (u, headers) => go(one(u, headers), { API_TOKEN: SECRET });
 
 check("secret masked in a header", () =>
   withSecret("https://a.example", [{ name: "a", value: "Bearer {{$env.API_TOKEN}}" }])
-    .prepared.headers[0].value === "Bearer \u2022\u2022\u2022\u2022");
+    .projection.headers[0].value === "Bearer \u2022\u2022\u2022\u2022");
 check("secret absent from the whole result", () =>
   !JSON.stringify(withSecret("https://a.example",
     [{ name: "a", value: "Bearer {{$env.API_TOKEN}}" }])).includes(SECRET));
@@ -335,7 +335,7 @@ check("secret segment carries the key, never the value", () => {
   return s.key === "API_TOKEN" && s.value === undefined;
 });
 check("secret in a url is masked", () =>
-  withSecret("https://a.example/x?k={{$env.API_TOKEN}}", []).prepared.url
+  withSecret("https://a.example/x?k={{$env.API_TOKEN}}", []).projection.url
     === "https://a.example/x?k=\u2022\u2022\u2022\u2022");
 check("secret in a url does not leak", () =>
   !JSON.stringify(withSecret("https://a.example/x?k={{$env.API_TOKEN}}", [])).includes(SECRET));
@@ -367,7 +367,7 @@ check("unset env is unresolved, not refused", () => {
 });
 check("unset env still renders the request", () =>
   go(one("https://a.example", [{ name: "a", value: "{{$env.NOPE}}" }]), {})
-    .prepared.headers[0].value === "{{$env.NOPE}}");
+    .projection.headers[0].value === "{{$env.NOPE}}");
 check("unresolved names the variable", () =>
   go(one("https://a.example", [{ name: "a", value: "{{$env.NOPE}}" }]), {})
     .unresolved[0].variable === "NOPE");
@@ -391,13 +391,13 @@ check("empty collection variable renders (empty) in provenance", () =>
     .provenance[0].empty === true);
 check("an unresolved url is not normalized", () => {
   const r = go(one("https://a.example/a b/{{nope}}"));
-  return r.urlResolved === false && r.prepared.url === "https://a.example/a b/{{nope}}";
+  return r.urlResolved === false && r.projection.url === "https://a.example/a b/{{nope}}";
 });
 check("an unresolved url is never shown percent-mangled", () =>
-  !go(one("https://a.example/{{nope}}")).prepared.url.includes("%7B%7B"));
+  !go(one("https://a.example/{{nope}}")).projection.url.includes("%7B%7B"));
 check("a resolved url with an unresolved header still normalizes", () => {
   const r = go(one("https://a.example/a b", [{ name: "a", value: "{{nope}}" }]));
-  return r.urlResolved === true && r.prepared.url === "https://a.example/a%20b";
+  return r.urlResolved === true && r.projection.url === "https://a.example/a%20b";
 });
 
 // --------------------------------------------------------------- headers ----
@@ -405,20 +405,20 @@ check("a resolved url with an unresolved header still normalizes", () => {
 check("duplicate header names survive", () => {
   const r = go(one("https://a.example", [
     { name: "X-Tag", value: "alpha" }, { name: "X-Tag", value: "beta" }]));
-  return r.prepared.headers.length === 2 && r.prepared.headers[1].value === "beta";
+  return r.projection.headers.length === 2 && r.projection.headers[1].value === "beta";
 });
 check("P3 identical name AND value survive as two", () => {
   const r = go(one("https://a.example", [
     { name: "X-Tag", value: "same" }, { name: "X-Tag", value: "same" }]));
-  return r.prepared.headers.length === 2;
+  return r.projection.headers.length === 2;
 });
 check("header casing preserved", () =>
   go(one("https://a.example", [{ name: "Authorization", value: "x" }]))
-    .prepared.headers[0].name === "Authorization");
+    .projection.headers[0].name === "Authorization");
 check("header order preserved", () => {
   const r = go(one("https://a.example", [
     { name: "a", value: "1" }, { name: "b", value: "2" }, { name: "c", value: "3" }]));
-  return r.prepared.headers.map((h) => h.name).join("") === "abc";
+  return r.projection.headers.map((h) => h.name).join("") === "abc";
 });
 check("empty header value warns, not refused", () => {
   const r = go(one("https://a.example", [{ name: "a", value: "" }]));
@@ -627,7 +627,7 @@ check("the README's first command works, as written", () => {
 check("the README's workspace example resolves", () => {
   const block = readme.match(/```json\n([\s\S]*?)```/);
   const r = resolveWorkspace(block[1], { env: { API_TOKEN: "x" }, source: "README" });
-  return r.resolvable === true && r.prepared.headers.length === 3;
+  return r.resolvable === true && r.projection.headers.length === 3;
 });
 check("the README does not claim this release sends anything", () =>
   readme.includes("0.1.0 sends nothing"));
