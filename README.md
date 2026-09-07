@@ -7,7 +7,7 @@ hand to the transport — method, URL, headers — together with where every
 substituted value came from and what happened to it on the way.
 
 **0.1.0 sends nothing.** There is no transport in this release. It is the
-inspector; `run` arrives in 0.2.0.
+inspector; `run` arrives in 0.3.0.
 
 Save the workspace file from [The workspace file](#the-workspace-file) below as
 `example.reqtrail.json`, then:
@@ -63,7 +63,7 @@ run the harness yourself.
 
 **0.1.0 has no transport and no receiver, so what it shows you is the request
 that *will be* sent — verified by slice 0, not by anything this release does on
-your machine.** When `run` ships in 0.2.0, that changes.
+your machine.** When `run` ships in 0.3.0, that changes.
 
 ## The workspace file
 
