@@ -156,8 +156,8 @@ await check("selection — nothing to select in an empty workspace", () =>
 
 await check("dispatch — an error document is a refusal, not a result", () =>
   classifyResponse({ error: { code: "x", path: "p", cause: "c" } }).kind === "refusal");
-await check("dispatch — a prepared request is a result", () =>
-  classifyResponse({ prepared: { method: "GET" } }).kind === "result");
+await check("dispatch — a request projection is a result", () =>
+  classifyResponse({ projection: { method: "GET" } }).kind === "result");
 await check("dispatch — an unreadable body is neither", () =>
   classifyResponse(null).kind === "unusable" &&
   classifyResponse({}).kind === "unusable");
