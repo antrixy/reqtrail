@@ -6,7 +6,7 @@
 hand to the transport — method, URL, headers — together with where every
 substituted value came from and what happened to it on the way.
 
-**0.1.0 sends nothing.** There is no transport in this release. It is the
+**This release sends nothing.** There is no transport in it. It is the
 inspector; `run` arrives in 0.3.0.
 
 Save the workspace file from [The workspace file](#the-workspace-file) below as
@@ -50,7 +50,7 @@ adds and transforms things reqtrail does not control: `Host`, `Connection`,
 header casing at the wire level, HTTP version, TLS. A promise about wire bytes
 could not be kept. A promise about what reqtrail hands the transport can be.
 
-**Read this part carefully, because it is the honest limit of 0.1.0.**
+**Read this part carefully, because it is the honest limit of this release.**
 
 The second sentence of the claim is true, and **you cannot reproduce it with
 this release.** The comparison against a receiver was run once, before any of
@@ -61,9 +61,9 @@ bytes. The predictions were written down first, and two of them were wrong. All
 of it is in `SLICE-0-PREREGISTRATION.md` and `SLICE-0-EVIDENCE.md`, and you can
 run the harness yourself.
 
-**0.1.0 has no transport and no receiver, so what it shows you is the request
-that *will be* sent — verified by slice 0, not by anything this release does on
-your machine.** When `run` ships in 0.3.0, that changes.
+**This release has no transport and no receiver, so what it shows you is the
+request that *will be* sent — verified by slice 0, not by anything this release
+does on your machine.** When `run` ships in 0.3.0, that changes.
 
 ## The workspace file
 
@@ -150,7 +150,7 @@ is a perfectly valid hostname to a DNS resolver — so reqtrail does.
 | `2` | Usage error | Fix the command |
 | `3` | Send attempted and failed | Nothing to edit; may be transient |
 
-**Code 3 cannot occur in 0.1.0** — nothing is sent, so nothing can fail in
+**Code 3 cannot occur in this release** — nothing is sent, so nothing can fail in
 transit. It is listed because **exit codes are interface from this release
 onward**: a code may be added, but an existing code's meaning will not change.
 **Test `!= 0` rather than equality.**

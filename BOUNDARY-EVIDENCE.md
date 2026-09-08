@@ -188,16 +188,29 @@ corrected to 0.3.0.
 
 **This was not in the pre-registration and is written down for that reason.**
 The justification is `import-fidelity-spike`'s rule — *a frozen artifact must
-not stay wrong about itself* — applied to a published one: correcting a false
-assertion changes no measurement and invalidates no citation, where changing
-behaviour would. It is a repair, not scope.
+not stay wrong about itself*: correcting a false assertion changes no
+measurement and invalidates no citation, where changing behaviour would. It is
+a repair, not scope.
 
-**No guard was added, deliberately.** `selftest.mjs:632` checks the sentence
-*"0.1.0 sends nothing"*, which is still true, so nothing caught this. A guard
-pinning the version roadmap would have to encode the current roadmap, and the
-roadmap is the thing that just moved — it would need editing every time the
-schedule changes, which is the maintenance shape the handoff's md5 table already
-billed for. Recorded as a known uncovered drift class rather than closed.
+**CORRECTED 2026-09-07. The sentence above said "applied to a published one",
+and that was wrong.** The repair reached the repository and NOT the published
+package. npm serves the README from the published tarball, so `reqtrail@0.1.0`'s
+page still tells every visitor `run` arrives in 0.2.0, and no repository commit
+can change that. Verified against `registry.npmjs.org/reqtrail`, whose stored
+readme still carries all five 0.1.0-pinned claims.
+
+**Publishing is the only mechanism that corrects it.** That is now the strongest
+argument for releasing 0.2.0 at all, since the release otherwise carries no
+user-visible change beyond a `--json` field rename.
+
+**No guard was added at the time, deliberately** — a guard encoding the version
+roadmap would need editing on every schedule change. That reasoning was right
+and it did not go far enough: the EXISTING guard was already the thing it warned
+about. It required the literal string *"0.1.0 sends nothing"*, which is a lie in
+every release after 0.1.0, so it would have blocked the very correction it
+existed to protect. **A guard that must be disabled in order to fix what it
+guards is worse than no guard.** Both the README claims and the guard are now
+version-agnostic.
 
 **How it was found:** by reading the README while surveying the rename surface,
 not by any check. Nothing in the repo would have surfaced it.
@@ -270,3 +283,42 @@ having verified more than it did.
 with arguments attached: the UI component's wiring to its extracted decisions,
 which needs a browser, and continued consumption after a 413, which nothing in
 the suite can observe.
+
+## Five value-pins in two days, four of them guards
+
+Stated as a rule because it is a pattern, not a run of incidents. **The version
+bump to 0.2.0 found three more of them in one command** — the release was the
+instrument that exposed them, which is why the count below is five.
+
+| Guard | Pinned | Should have pinned |
+| --- | --- | --- |
+| `EVIDENCE-0.1.0.md` count | the live suite total, in a frozen document | that the FROZEN document keeps its shipped number |
+| `BOUNDARY-EVIDENCE.md` count | the first match in document order | every quoted count, historical ones marked |
+| README no-transport | the literal string `0.1.0 sends nothing` | that the claim exists and names no version |
+| `--version` check | the literal `"0.1.0"` | the SHAPE — one bare semver line |
+| `bin/reqtrail.js` crash message | the version string, unguarded | `VERSION`, which it already had in scope |
+
+**A guard must pin the property, not the artifact's current value of it.** Each
+was green, each looked like it was defending something real, and each would have
+failed on the next legitimate edit while reporting a defect. The README one is
+the worst: it would have blocked its own correction. The `bin/reqtrail.js` one is
+the quietest — no check covered it, so a 0.2.0 crash would have told the user to
+report a bug in 0.1.0, and nothing would ever have failed.
+
+Two were found by reading rather than by running — the README pin
+while surveying for the release, the positional one during post-commit
+verification. **Nothing in the suite finds this class**, because a guard pinned
+to a stale value is indistinguishable from a guard that is passing.
+
+## The new and rewritten guards were run against mutants
+
+    MUT-1  README claim re-pinned to a version      dies
+    MUT-2  README claim removed entirely            dies
+    MUT-3  claim kept, second version-pinned claim  dies, on the second branch
+    MUT-4  BOUNDARY-EVIDENCE sections reordered     survives (it must)
+    MUT-5  live count edited to a wrong value       dies
+
+MUT-3 exists because MUT-1 killed the check on the wrong branch: replacing the
+sentence trips the presence test before the version-pinning test ever runs, so
+the second branch was unexercised and would have been reported as covered.
+MUT-4 is the defect that motivated the rewrite, now confirmed harmless.
