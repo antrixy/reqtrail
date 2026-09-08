@@ -46,7 +46,7 @@ and not references to the object: `errors.js:20-21` and `main.jsx:139` all use
 Every suite re-run after the change, on the fetched archive with `npm ci` and
 `scripts/build-ui.mjs` run so the UI half could execute:
 
-    selftest    169/169        was 159 at v0.1.0; the boundary work adds 10
+    selftest    171/171        was 159 at v0.1.0; the boundary work adds 12
     server      51/51          unchanged
     refusals    37/37 carrying a literal message
     leak-audit  0 of 28 leaking, 0 disclosure paths, 0 escape paths
@@ -97,7 +97,7 @@ public half. `resolveWorkspace` is an alias, so every adapter is unchanged.
 
 ### Verification
 
-    selftest    169/169        was 159 at v0.1.0; the boundary work adds 10
+    selftest    171/171        was 159 at v0.1.0; the boundary work adds 12
     server      51/51          unchanged
     refusals    37/37 carrying a literal message
     leak-audit  0 of 28 leaking, 0 disclosure paths, 0 escape paths
@@ -322,3 +322,59 @@ MUT-3 exists because MUT-1 killed the check on the wrong branch: replacing the
 sentence trips the presence test before the version-pinning test ever runs, so
 the second branch was unexercised and would have been reported as covered.
 MUT-4 is the defect that motivated the rewrite, now confirmed harmless.
+
+## The npm surface, checked before publishing rather than after
+
+**The README cited four repo paths the tarball does not contain**:
+`EVIDENCE-0.1.0.md`, `LEAK-AUDIT-EVIDENCE.md`, `test/leak-audit.mjs` and
+`test/sitting-browser.mjs`. `test/` is not in `package.json`'s `files`, and
+neither of the two documents is. On GitHub every reference resolved, so nothing
+looked wrong anywhere a maintainer reads.
+
+**On npm they resolve to nothing.** Line 114 cited `LEAK-AUDIT-EVIDENCE.md` as
+the backing for the containment claim — the claim this project has now got wrong
+twice — and line 174 cited `test/sitting-browser.mjs` as proof the UI
+mitigations were tested against a real browser. A stranger is asked to take the
+two strongest claims on trust, which inverts what the evidence discipline is
+for.
+
+**Fixed by linking, not by shipping.** The four are now absolute
+`blob/main` URLs, so they resolve from npm and from GitHub. Shipping them was
+the alternative and was rejected on size — `test/` is substantial — though
+`LEAK-AUDIT-EVIDENCE.md` had the better case for shipping, since the two
+`SLICE-0-*` documents already do and it backs a claim in the package's own
+description. **The inconsistency is real and is left standing deliberately**:
+some evidence ships, most is linked.
+
+**The cost of the link route is a rename breaking a link silently**, and npm
+freezes the break for the life of the release. So there are two guards, not one:
+every cited path ships or is linked, and every link into this repo points at a
+file that exists on disk.
+
+### Mutants
+
+    MUT-A  a link reverted to a bare citation        dies
+    MUT-B  link URL renamed, backtick text unchanged dies — ON THE WRONG CHECK
+    MUT-C  a new bare citation added                 dies
+    MUT-D  a shipped doc dropped from `files`        dies
+    MUT-E  text AND URL renamed to a missing file    dies, on the link check
+
+**MUT-B is the finding.** It was written to exercise the link-target check and
+killed the citation check instead, because renaming the URL also breaks the
+text/link pairing. The second branch was unexercised and would have been
+reported as covered. MUT-E was written to reach it. **This is the second time in
+this sitting that a mutant killed a check on the wrong branch** — the same thing
+happened with MUT-1 and the README version guard. Two occurrences is enough to
+state it: *a mutant that dies proves only that SOMETHING caught it, and a
+multi-branch check needs one mutant per branch.*
+
+MUT-C and MUT-D also exposed a reporting defect: a doc cited twice was counted
+twice, so a one-file problem read as two. Now deduplicated.
+
+### Why the guard does not call `npm pack`
+
+`prepack` is `npm test`, so shelling out to `npm pack` from inside the suite
+would recurse. Membership is computed from `files` instead. Relatedly, the grep
+that found this was **wrong on its first run**: `npm notice` writes to stderr,
+and a `2>/dev/null` reported every file as missing. The correction is what
+produced the real list.

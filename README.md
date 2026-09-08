@@ -104,14 +104,14 @@ or logs.** Resolving it happens inside the core, wherever a decision needs the
 real bytes — normalization has to see them to tell you it changed them, and the
 header checks have to see them to find a control character — and none of those
 values reaches an output. That is checked rather than asserted:
-`test/leak-audit.mjs` drives a marked secret through every refusal and every
+[`test/leak-audit.mjs`](https://github.com/antrixy/reqtrail/blob/main/test/leak-audit.mjs) drives a marked secret through every refusal and every
 channel and reports zero.
 
 Two earlier versions of this paragraph got it wrong in the same direction. The
 first said no code path resolved a secret at all; three refusals leaked as a
 result. The second said exactly one module resolved one; there are three. **The
 guarantee is about the outputs, not about the module list** — see
-`LEAK-AUDIT-EVIDENCE.md`.
+[`LEAK-AUDIT-EVIDENCE.md`](https://github.com/antrixy/reqtrail/blob/main/LEAK-AUDIT-EVIDENCE.md).
 
 **Substitution is one pass.** A `{{...}}` inside a variable's value is refused,
 not expanded. That is what keeps provenance a flat list rather than a tree, and
@@ -171,8 +171,8 @@ Those are not hardening. `reqtrail ui` is by construction a local service
 holding your environment secrets, and if a web page could drive it that is an
 exfiltration primitive. The mitigations are the condition of choosing a web UI
 over a desktop app, and they are tested — including against a real browser, in
-`test/sitting-browser.mjs`. One of them was measurably wrong before that sitting
-ran; see `EVIDENCE-0.1.0.md`.
+[`test/sitting-browser.mjs`](https://github.com/antrixy/reqtrail/blob/main/test/sitting-browser.mjs). One of them was measurably wrong before that sitting
+ran; see [`EVIDENCE-0.1.0.md`](https://github.com/antrixy/reqtrail/blob/main/EVIDENCE-0.1.0.md).
 
 ## What is not here
 
