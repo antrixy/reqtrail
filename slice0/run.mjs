@@ -8,14 +8,22 @@ import http from "node:http";
 // TRANSPORT: node:http, not fetch. fetch/Headers COLLAPSES duplicate header
 // names into one comma-joined value and injects accept, accept-encoding,
 // user-agent and sec-fetch-mode. Both make the canonical model unrepresentable.
+//
+// SEND SIDE REPAIRED 2026-09-08, and this is the ONLY behaviour change this
+// file has taken since the 2026-09-04 run. It previously built an OBJECT from
+// the ordered array, which is the harness doing to itself what it was written
+// to catch fetch doing. node:http accepts a flat array and writes it in the
+// given order. Full account, including what the object form silently deleted
+// and which rows moved, in ../SLICE-0-EVIDENCE.md under "the send side was
+// lossy". The 2026-09-04 tree is at 2876a83 if you want the original.
+//
+// NO ASSERTION IN THIS FILE WAS EDITED. P4 and P8 were falsified on 09-04 and
+// are still falsified; the repair moved neither verdict.
 async function send(prepared) {
   const m = prepared.materialize();
   const u = new URL(m.url);
-  const headers = {};
-  for (const x of m.headers) {
-    if (x.name in headers) headers[x.name] = [].concat(headers[x.name], x.value);
-    else headers[x.name] = x.value;
-  }
+  const headers = [];
+  for (const x of m.headers) headers.push(x.name, x.value);
   return new Promise((res, rej) => {
     const req = http.request({ host: u.hostname, port: u.port,
       path: u.pathname + u.search, method: m.method, headers });
@@ -66,10 +74,14 @@ rec("P4", "names lowercased on the wire", authName === "authorization",
 // P8 runtime-added headers
 const userSet = new Set(["authorization","x-tag","x-empty","accept-language"]);
 const added = cap.headers.map(h => h.name.toLowerCase()).filter(n => !userSet.has(n)).sort();
-// PREDICTED, not observed. P8 named these five; node:http adds two, so this
-// assertion FAILS and that failure is the recorded result. Do not "fix" it to
-// match reality — editing an assertion to fit an outcome is what this project
-// exists not to do. See SLICE-0-EVIDENCE.md, conduct note on P8.
+// PREDICTED, not observed. P8 named these five; node:http adds ONE under the
+// repaired send side — Connection. On 09-04, through the object form, it added
+// two: Host and Connection. The array form supplies no Host, which is a real
+// finding and not a harness artifact; see ../SLICE-0-EVIDENCE.md.
+// Either way this assertion FAILS and that failure is the recorded result. Do
+// not "fix" it to match reality — editing an assertion to fit an outcome is
+// what this project exists not to do. See SLICE-0-EVIDENCE.md, conduct note
+// on P8.
 const expected = ["accept","accept-encoding","connection","host","user-agent"].sort();
 rec("P8", "runtime adds exactly the documented five",
     JSON.stringify(added) === JSON.stringify(expected), JSON.stringify(added));
