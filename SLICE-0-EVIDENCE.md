@@ -7,6 +7,15 @@ before the harness was written.
     Receiver: raw socket (net.createServer)  = yes
     Outcome: GO, with two rows NOT REACHED
 
+> **AMENDED 2026-09-08 — `run.mjs`'s SEND SIDE WAS LOSSY AND HAS BEEN REPAIRED.**
+> The harness converted the ordered header array to an object before `node:http`
+> saw it. **No prediction changed verdict** and no assertion was edited: P4 and
+> P8 were falsified on 09-04 and are still falsified. What changed is one
+> observed detail — the runtime adds ONE header now, not two — and it is
+> corrected in the P8 row below rather than left standing. The full account is
+> the section *The send side was lossy* near the end of this file. The
+> 2026-09-04 tree, harness and document together, is at commit `2876a83`.
+
 ---
 
 ## Outcome
@@ -43,7 +52,10 @@ The same fixture through `node:http`:
     X-Tag: beta            two occurrences, in file order
     Authorization          casing preserved
     X-Empty:               empty value transmitted
-    runtime added: Host, Connection    — and nothing else
+    runtime added: Connection          — and nothing else
+                                       (09-04 read Host, Connection; see the
+                                       amendment — the object form was what
+                                       caused node:http to supply Host)
 
 **Consequence.** The ordered, duplicate-preserving header array decided on
 2026-09-04 — the correction that came out of `import-fidelity-spike`'s
@@ -86,7 +98,7 @@ where the last mistake happened.*
 | P5 | Non-ASCII path percent-encoded in both | **right** — `/caf%C3%A9` |
 | P6 | Non-ASCII host as punycode in `Host` | **NOT REACHED** |
 | P7 | Space is `%20` in both | **right** |
-| P8 | Runtime adds exactly Host, Connection, Accept, Accept-Encoding, User-Agent | **WRONG** — `node:http` adds two: Host, Connection |
+| P8 | Runtime adds exactly Host, Connection, Accept, Accept-Encoding, User-Agent | **WRONG** — `node:http` adds ONE: Connection. Read as two on 09-04 (Host, Connection); Host was an artifact of the lossy send side, see the amendment |
 | P9 | `--as-curl` reaches the same captured result | **NOT REACHED** — renderer not built |
 | P10 | No secret in reqtrail-generated output | **right** |
 | P11 | Missing env var refuses, exits 1, sends nothing | **right** — receiver recorded no connection |
@@ -106,6 +118,12 @@ which is changing the assertion to fit the result. The prediction as written
 named five specific headers; reality is two. **P8 is recorded as falsified and
 the edit is not kept.** Noted because the edit felt like a correction at the
 time and reads as one in the diff.
+
+**Re-read 2026-09-08 and it held.** The send-side repair was the obvious moment
+to quietly bring the expected list into line, since the observed set changed
+again. It was not touched. The assertion still names five, still fails, and the
+detail column reports what was actually seen. **A conduct note is only worth
+anything on the sitting that would rather not obey it.**
 
 ---
 
@@ -129,6 +147,60 @@ undefined variable. Each named a field path and a cause.
 **`/100%` is worth noting** — it is *not* percent-encoded by the URL layer and
 survives verbatim. A trailing bare `%` is the case most likely to break a naive
 re-encoder later.
+
+---
+
+## The send side was lossy — amended 2026-09-08
+
+**`run.mjs:14-17` built an object from the ordered header array**, then handed
+the object to `node:http`. This is the F15 failure mode a third time, in the
+same file the *false finding* section above says it was caught in. It was caught
+there for DUPLICATE COLLAPSE on one fixture; the mechanism was left in place.
+
+**What the object form deleted, measured rather than argued.**
+`slice0/collapse-demo.mjs` sends one ordered array both ways at the same
+receiver:
+
+    sent (ordered array)   X-Tag: alpha | X-Other: mid | X-Tag: beta | x-tag: gamma
+    A object collapse      x-tag: gamma | X-Other: mid
+    B flat array           X-Tag: alpha | X-Other: mid | X-Tag: beta | x-tag: gamma
+
+    occurrences sent 4 | A captured 2 | B captured 4
+
+**Two occurrences vanished with no error.** `X-Tag` and `x-tag` are two JS keys
+but one HTTP header; `node:http` keeps the later key and drops the earlier one
+silently. The loss is DELETION, not reordering, and the earlier wording in
+`decisions.md` and the handoff — *converted the ordered array to an object* —
+is accurate and undersells it.
+
+**Why the 09-04 run did not see it.** The base fixture's two `X-Tag` entries are
+ADJACENT and IDENTICALLY CASED. That is the one arrangement an object survives:
+same key, array value, both emitted in order. **P2 passed on the narrowest input
+that could pass**, which is 9e's wrong-input-class failure — a check green
+because of the input it was handed, not because of what it checks.
+
+**The repair.** `node:http` accepts a flat `[name, value, name, value, ...]` and
+writes it in the given order, preserving repeats, interleaving across distinct
+names, and name casing. Two lines.
+
+**What moved, in full.** P1, P2, P3, P10 and P14 pass, as before. P4 fails, as
+before, on the same detail. **P8 fails, as before, on a different detail:**
+
+    09-04, object form   added Host, Connection
+    09-08, array form    added Connection
+
+**`Host` was not a runtime constant.** Under array headers `node:http` supplies
+no `Host`, and `setHost: true` does not restore it — measured. A real HTTP/1.1
+server answers the resulting request with **400**; supplying `Host` explicitly
+in the array reaches 200. So the repair does not merely tidy the header block:
+**it moves `Host` construction out of the runtime and into whatever sends.**
+That is a scope consequence for the transport adapter and it is recorded here
+because it was found here, not in the release that has to act on it.
+
+**What this amendment does NOT claim.** The 09-04 GO stands. Every sendable case
+still matched, every refusal still reached the wire with zero bytes, and no
+verdict moved. The harness was measuring a lossy send side and reported the
+results of one accurately.
 
 ---
 
