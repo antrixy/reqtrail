@@ -938,7 +938,12 @@ check("every repo path the README names either ships or is an absolute URL", () 
   }
 
   const dangling = new Set();
-  for (const m of readme.matchAll(/`([A-Za-z0-9_-]+(?:\/[A-Za-z0-9_.-]+)*\.(?:md|mjs|js|json))`/g)) {
+  // The stem class INCLUDES a dot. It did not at first, so `EVIDENCE-0.1.0.md`
+  // — a dotted stem — never matched and was never checked. The guard passed on
+  // it by not seeing it, which is the exact failure it was written to catch,
+  // one level up. Found by re-running the mutant against a SECOND path rather
+  // than trusting the first kill.
+  for (const m of readme.matchAll(/`([A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*\.(?:md|mjs|js|json))`/g)) {
     const path = m[1];
     // Bare filenames the prose uses as a name the reader will type or create,
     // not as a pointer into the repo.
