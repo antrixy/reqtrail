@@ -54,7 +54,7 @@
 
 import { refuse } from "./errors.js";
 import { segment, allResolved } from "./grammar.js";
-import { normalizeUrl, MASK } from "./url.js";
+import { normalizeUrl, hostFromHref, MASK } from "./url.js";
 import { exactFromSegments, project } from "./exact.js";
 
 // The set node:http accepts, established by exhaustive measurement over
@@ -77,6 +77,20 @@ const publicSegment = (s) => {
 export function prepareRequest(request, variables, env) {
   const warnings = [];
   const unresolved = [];
+
+  // A WORKSPACE MAY NOT DECLARE ITS OWN `Host`, and this is a refusal rather
+  // than a warning or a silent de-duplication. reqtrail derives `Host` from the
+  // URL; a second one on the wire is a request-smuggling shape, and which of
+  // the two a given intermediary honours is exactly the kind of thing this
+  // product exists not to leave to chance. The same reasoning refuses CR and LF
+  // in header values.
+  const declaredHost = request.headers.findIndex(
+    (h) => h.name.toLowerCase() === "host");
+  if (declaredHost !== -1) {
+    refuse("header.host", `headers[${declaredHost}]`,
+      "a workspace may not set the Host header; reqtrail derives it from the " +
+      "URL, and sending two would be a request-smuggling shape");
+  }
 
   const urlSegs = segment(request.url, "url", variables, env);
 
@@ -231,10 +245,32 @@ export function prepareRequest(request, variables, env) {
   // thing the projection is built from. It is deliberately NOT part of the
   // returned object — see `resolveWorkspace` below, which is where the boundary
   // is enforced rather than merely intended.
+  //
+  // `origin` DISTINGUISHES WHAT THE USER WROTE FROM WHAT REQTRAIL DERIVED, and
+  // it is on every header rather than only on the derived one. A field present
+  // on some entries is read as an annotation; a field present on all of them is
+  // a property of the document. Without it the projection would assert that the
+  // user wrote a header they did not, in the one tool whose claim is that it
+  // says where every value came from.
+  //
+  // `Host` is FIRST, matching convention, and is ABSENT when the URL does not
+  // resolve — there is no normalized URL to derive it from in that branch, and
+  // inventing one would be showing a request that could not be sent.
+  const exactHeaders = headerSegs.map((h) => ({
+    name: h.name, value: h.exact, origin: "workspace",
+  }));
+  if (urlResolved) {
+    exactHeaders.unshift({
+      name: "Host",
+      value: hostFromHref(urlView.exact.text, urlView.exact.secretRanges, "url"),
+      origin: "derived",
+    });
+  }
+
   const exact = {
     method: request.method,
     url: urlView.exact,
-    headers: headerSegs.map((h) => ({ name: h.name, value: h.exact })),
+    headers: exactHeaders,
   };
 
   // THE PAIR, and the two halves are SIBLINGS rather than one nested in the

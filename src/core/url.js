@@ -190,4 +190,62 @@ export function normalizeUrl(segs, env, path) {
   return { href, secretRanges, normalized: href !== raw, hadFragment, spans: results };
 }
 
+// THE HOST HEADER, derived HERE because this is where span attribution lives.
+//
+// It is derived rather than invented: `Host` is a function of the normalized
+// URL, and the transport adapter must not compute it. Under a flat header array
+// `node:http` supplies no `Host` at all (measured 2026-09-08; a real HTTP/1.1
+// server answers 400 without one), so something has to. If the adapter did it,
+// the adapter would be building request content — a second construction path,
+// which is the thing 0.2.0 shipped early to prevent — and it would compute the
+// value from `new URL(exact.url.text).host` with NO secret ranges attached,
+// putting a secret hostname in plaintext on a header the projection would then
+// have to mask independently.
+//
+// So the ranges come from the URL's, sliced to the host span. A secret in the
+// hostname is masked in `Host` for the same reason and by the same arithmetic
+// it is masked in the URL, not by a second rule that agrees with the first on
+// every fixture anyone thought to write.
+//
+// VERIFIED BY RECONSTRUCTION, like every other attribution in this module: the
+// slice must equal `new URL(href).host` exactly. `href` is already normalized,
+// so the authority holds no default port and no fragment.
+export function hostFromHref(href, secretRanges, path) {
+  const authStart = href.indexOf("://") + 3;
+  const authority = href.slice(authStart, href.indexOf("/", authStart));
+  // lastIndexOf("@") + 1 is 0 when there is no userinfo, which is the case we
+  // want: the host is the whole authority. Userinfo is excluded because `Host`
+  // carries host and port only.
+  const hostStart = authStart + authority.lastIndexOf("@") + 1;
+  const hostEnd = authStart + authority.length;
+  const text = href.slice(hostStart, hostEnd);
+
+  if (text !== new URL(href).host) {
+    // Unreachable by construction on a normalized href. Kept as an executable
+    // statement of the invariant: an attribution that cannot be proved is
+    // refused, never guessed.
+    refuse("host.undeterminable", path,
+      "reqtrail cannot determine which bytes of the URL are the host, so it " +
+      "cannot show the Host header it would send");
+  }
+
+  const ranges = [];
+  for (const r of secretRanges) {
+    const start = Math.max(r.start, hostStart);
+    const end = Math.min(r.end, hostEnd);
+    if (start >= end) continue;
+    // A secret whose bytes STRADDLE the host boundary would be shown half
+    // masked and half in plaintext. Refused rather than partially masked.
+    if (r.start < hostStart || r.end > hostEnd) {
+      refuse("host.secret.undisplayable", path,
+        "a secret value spans the boundary between the host and the rest of " +
+        "the URL, so the Host header cannot be masked without either " +
+        "revealing part of it or hiding bytes that are not secret");
+    }
+    ranges.push({ start: start - hostStart, end: end - hostStart });
+  }
+
+  return { text, secretRanges: ranges };
+}
+
 export { MASK };

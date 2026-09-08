@@ -80,6 +80,10 @@ export function project(exact) {
     headers: exact.headers.map((h) => ({
       name: h.name,
       value: maskRanges(h.value.text, h.value.secretRanges),
+      // Copied, not decided. `project` substitutes and does nothing else; if it
+      // computed `origin` it would be a second place that knows which headers
+      // reqtrail adds, which is the shape this module exists to have one of.
+      origin: h.origin,
     })),
   };
 }
