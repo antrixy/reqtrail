@@ -12,7 +12,7 @@ import { project } from "../src/core/exact.js";
 import { parseWorkspace, selectRequest } from "../src/core/parse.js";
 import { Refusal } from "../src/core/errors.js";
 
-const EXPECTED = 184;
+const EXPECTED = 190;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -563,7 +563,7 @@ check("--version prints only the version, and nothing else", () => {
 });
 check("--help exits 0", () => run(["--help"]).code === 0);
 check("help says nothing is sent", () =>
-  run(["--help"]).stdout.includes("does not send"));
+  run(["--help"]).stdout.includes("run shows it and then sends it"));
 check("a refusal in --json mode emits JSON on stderr", () => {
   const r = run(["resolve", exFile, "--json"]);
   return JSON.parse(r.stderr).error.code === "selection.ambiguous";
@@ -977,10 +977,53 @@ check("no adapter reaches the exact request", () => {
   return true;
 });
 
-check("`inspect` is the exported use case and `run` is not one yet", () => {
+// REPLACED 2026-09-08. It required that `run` NOT be exported, and it fired by
+// design the moment `run` shipped. What it was defending is not the absence of
+// `run` — it is that `run` is a CONSUMER of the pair and not a second way to
+// build a request. That is what these check.
+check("`inspect` and `run` are both exported use cases", () => {
   const src = readSource("src/core/prepare.js");
   return /export function inspect\b/.test(src) &&
-    !/export (function|const) run\b/.test(src);
+    /export async function run\b/.test(src);
+});
+check("`run` consumes the pair — it never calls prepareRequest itself", () => {
+  const src = stripComments(readSource("src/core/prepare.js"));
+  const body = src.slice(src.indexOf("export async function run"));
+  return body.includes("prepareFromWorkspace(text, options)") &&
+    !/prepareRequest\s*\(/.test(body);
+});
+check("prepareFromWorkspace has exactly TWO consumers", () => {
+  const src = stripComments(readSource("src/core/prepare.js"));
+  return (src.match(/prepareFromWorkspace\(/g) ?? []).length === 3; // 1 def + 2 uses
+});
+check("the transport is imported by the core and by NO adapter", () => {
+  const adapters = ["src/cli/render.js", "src/cli/main.js", "src/server/server.js",
+    "src/ui/logic.js", "src/ui/main.jsx", "bin/reqtrail.js"];
+  for (const f of adapters) {
+    if (/transport\//.test(stripComments(readSource(f)))) {
+      throw new Error(`${f} imports the transport directly`);
+    }
+  }
+  return /from "\.\.\/transport\/http\.js"/.test(readSource("src/core/prepare.js"));
+});
+// A TRANSPORT ERROR'S PROSE CARRIES VALUES FROM THE REQUEST. Measured:
+// `getaddrinfo ENOTFOUND secret-host.invalid`. A secret can be the hostname, so
+// the message and node's `hostname` / `address` / `port` fields must never be
+// copied into the result.
+check("run surfaces a transport CODE and never a message or address", () => {
+  const src = stripComments(readSource("src/core/prepare.js"));
+  const body = src.slice(src.indexOf("function transportCode"));
+  return !/e\.(message|hostname|address|port)/.test(body);
+});
+check("an unrecognisable transport code is replaced, not passed through", () => {
+  const src = stripComments(readSource("src/core/prepare.js"));
+  return /CODE_SHAPE\.test\(e\.code\)/.test(src) &&
+    /"transport\.failed"/.test(src);
+});
+check("exit code 3 is documented as REACHABLE, not as unreachable", () => {
+  const src = readSource("src/cli/main.js");
+  return /3\s+send attempted and failed/.test(src) &&
+    !/UNREACHABLE while there is no transport/.test(src);
 });
 
 // --------------------------------------------- the published surface -------

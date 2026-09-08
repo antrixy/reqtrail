@@ -15,7 +15,7 @@
 
 import http from "node:http";
 import { startReceiver, parseCapture } from "../slice0/receiver.mjs";
-import { __prepareForTest } from "../src/core/prepare.js";
+import { __prepareForTest, run } from "../src/core/prepare.js";
 import { send, wireHeaders } from "../src/transport/http.js";
 
 let passed = 0;
@@ -93,6 +93,40 @@ check("P-CONTAIN a secret header value is on the wire and masked in the view", (
   c3.raw.includes("secret.internal") && !JSON.stringify(v3).includes("secret.internal"));
 
 r.close();
+
+// ---- `run` end to end, through the CLI's own use case -----------------------
+// Exit code 3 became reachable in this release. These are the rows that make
+// "nothing is sent" a claim about behaviour rather than a statement of fact.
+const echo = http.createServer((q, s) => { s.statusCode = 404; s.end("no"); });
+await new Promise((res) => echo.listen(0, "127.0.0.1", res));
+const echoBase = `http://127.0.0.1:${echo.address().port}`;
+
+const ok = await run(work(echoBase, HEADERS), { env: ENV });
+check("run SENDS and reports the status", () =>
+  ok.sent === true && ok.response.status === 404);
+check("run returns the projection too — the diagnosis is not withheld", () =>
+  ok.projection.headers.length === built.length);
+check("a non-2xx answer is still a successful send", () => ok.sent === true);
+check("run leaks no secret into its result", () =>
+  !JSON.stringify(ok).includes("s3cr3t-value"));
+echo.close();
+
+const unres = await run(JSON.stringify({ version: 1, variables: {},
+  requests: [{ id: "r", name: "n", method: "GET", url: "{{nope}}/p", headers: [] }] }),
+  { env: ENV });
+check("run sends NOTHING when a reference is unresolved", () =>
+  unres.sent === false && unres.response === undefined && unres.transport === undefined);
+
+// A secret hostname that cannot resolve. node puts the hostname in the error
+// PROSE — `getaddrinfo ENOTFOUND ...` — so this is the row that proves the
+// reduction to a bare code is doing something.
+const bad = await run(JSON.stringify({ version: 1, variables: {},
+  requests: [{ id: "r", name: "n", method: "GET", url: "http://{{$env.BADHOST}}/p",
+    headers: [] }] }), { env: { ...ENV, BADHOST: "secret-host.invalid" } });
+check("a failed send reports a CODE", () =>
+  bad.sent === false && bad.transport.code === "ENOTFOUND");
+check("a failed send does not leak the hostname node put in its message", () =>
+  !JSON.stringify(bad).includes("secret-host.invalid"));
 
 // W-REAL. The row the raw receiver structurally cannot answer.
 const srv = http.createServer((q, s) => s.end("ok"));
