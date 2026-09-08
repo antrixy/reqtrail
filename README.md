@@ -21,6 +21,7 @@ The same file ships inside the package at `examples/example.reqtrail.json`.
 ```
 $ API_TOKEN=... reqtrail resolve example.reqtrail.json --request get-user
 GET https://api.example.com/users/42?q=a%20b
+Host: api.example.com
 Authorization: Bearer ••••
 X-Tag: alpha
 X-Tag: beta
@@ -36,6 +37,14 @@ Substitutions
 The arrow is the point. `{{query}}` held `a b`; what will go out is `a%20b`.
 A tool that showed you `a b` would be showing you something that is not sent.
 
+**`Host` is not in the file.** reqtrail derives it from the URL and shows it,
+because it goes on the wire and a request without it is answered with 400. It
+carries `"origin": "derived"` in `--json`, where every other header carries
+`"origin": "workspace"` — so a consumer can tell what you wrote from what
+reqtrail added, and the display is not quietly claiming you wrote it. A
+workspace that sets `Host` itself is refused rather than merged: two would be a
+request-smuggling shape.
+
 `reqtrail ui example.reqtrail.json` opens the same view in a browser, read only,
 with no send button.
 
@@ -46,9 +55,15 @@ with no send button.
 > What it shows is checked against what a receiver actually recorded.
 
 **"Effective transport input", not "the exact bytes on the wire."** The runtime
-adds and transforms things reqtrail does not control: `Host`, `Connection`,
-header casing at the wire level, HTTP version, TLS. A promise about wire bytes
-could not be kept. A promise about what reqtrail hands the transport can be.
+adds and transforms things reqtrail does not control: `Connection`, HTTP
+version, TLS. A promise about wire bytes could not be kept. A promise about what
+reqtrail hands the transport can be.
+
+**`Host` used to be on that list and no longer is.** It was there because the
+transport supplied it, invisibly, from an object of headers. reqtrail now passes
+an ordered array, the transport supplies no `Host`, and reqtrail derives and
+displays its own — which leaves `Connection` as the only header that reaches a
+receiver without appearing above.
 
 **Read this part carefully, because it is the honest limit of this release.**
 
