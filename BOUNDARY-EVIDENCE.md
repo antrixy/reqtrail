@@ -378,3 +378,30 @@ would recurse. Membership is computed from `files` instead. Relatedly, the grep
 that found this was **wrong on its first run**: `npm notice` writes to stderr,
 and a `2>/dev/null` reported every file as missing. The correction is what
 produced the real list.
+
+## The citation guard had the defect it was written to catch
+
+**Found during post-commit verification, on the committed tree, before
+publishing.** The guard was re-run as a mutant against a DIFFERENT cited path
+than the one MUT-A used. It did not fire.
+
+The bare-path regex spelled the filename stem `[A-Za-z0-9_-]+`, with **no dot**.
+So `EVIDENCE-0.1.0.md` — a dotted stem — never matched, was never checked, and
+the guard reported green **by not seeing it**. That is precisely the failure
+mode the guard exists to detect, one level up: a check that passes because it is
+looking at nothing.
+
+Three of the four cited paths have undotted stems, so MUT-A killed the check and
+the coverage looked complete. **One mutant against one path proved only that the
+path in that mutant was covered.** The mutant is now run against all four, and
+each dies naming itself.
+
+**This joins the wrong-branch pair (MUT-1, MUT-B) as the third mutation-coverage
+illusion in this sitting**, and it is the sharpest of the three. The rule they
+converge on: *a mutant that dies tells you about that mutant. Coverage of a
+check requires one mutant per branch AND per input class it discriminates on.*
+
+The reason it was caught is worth recording separately, because it was not
+method. The guard was re-run only as a spot-check that the guards still bit on
+the committed tree — the fourth verification pass of the day, on work already
+believed finished.
