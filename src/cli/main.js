@@ -5,20 +5,21 @@
 // warnings and diagnostics. A warning on stdout would corrupt --json for any
 // parser.
 //
-// Exit codes are INTERFACE from 0.1.0. Adding a code is allowed; changing an
-// existing code's meaning is breaking. Callers should test != 0, not equality.
+// Exit codes are INTERFACE from 0.1.0 onward. Adding a code is allowed;
+// changing an existing code's meaning is breaking. Callers should test != 0,
+// not equality.
 //
 //   0  resolved completely
 //   1  refused, or resolved with an unresolved reference — edit something
 //   2  usage error — fix the command
-//   3  send attempted and failed — UNREACHABLE in 0.1.0, nothing is sent
+//   3  send attempted and failed — UNREACHABLE while there is no transport
 
 import { readFileSync } from "node:fs";
 import { resolveWorkspace } from "../core/prepare.js";
 import { Refusal, StartupFailure } from "../core/errors.js";
 import { renderResolve, renderDiagnostics, renderRefusal } from "./render.js";
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
 
 const USAGE = `reqtrail ${VERSION} — see the request before it is sent
 
