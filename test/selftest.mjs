@@ -12,7 +12,7 @@ import { project } from "../src/core/exact.js";
 import { parseWorkspace, selectRequest } from "../src/core/parse.js";
 import { Refusal } from "../src/core/errors.js";
 
-const EXPECTED = 169;
+const EXPECTED = 171;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -901,6 +901,73 @@ check("`inspect` is the exported use case and `run` is not one yet", () => {
   const src = readSource("src/core/prepare.js");
   return /export function inspect\b/.test(src) &&
     !/export (function|const) run\b/.test(src);
+});
+
+// --------------------------------------------- the published surface -------
+//
+// FOUND BEFORE THE 0.2.0 PUBLISH, and it is the same class as the five
+// value-pins: the README cited four repo paths that the TARBALL DOES NOT
+// CONTAIN. `test/` is not in package.json's `files`, and neither are
+// EVIDENCE-0.1.0.md nor LEAK-AUDIT-EVIDENCE.md. On GitHub every reference
+// resolved, so nothing looked wrong; on npm a stranger reading "see
+// LEAK-AUDIT-EVIDENCE.md" — the backing for the containment claim that was
+// wrong twice — would have found nothing to see.
+//
+// npm's README is frozen per published version, so shipping that state would
+// have preserved it until the next release, exactly as 0.1.0's stale schedule
+// claim is preserved now.
+//
+// THE PROPERTY: every repo path the README names either ships in the tarball or
+// is written as an absolute URL. Not "these four paths are fine" — that would be
+// a value-pin, and the next citation added would not be covered.
+//
+// Tarball membership is computed from package.json's `files` rather than by
+// running `npm pack`, DELIBERATELY: `prepack` is `npm test`, so shelling out to
+// npm pack from inside the suite would recurse. It is also why the discovery
+// grep was wrong the first time — `npm notice` writes to STDERR, and a
+// 2>/dev/null on the check reported every file as missing.
+check("every repo path the README names either ships or is an absolute URL", () => {
+  const pkg = JSON.parse(readSource("package.json"));
+  const files = pkg.files ?? [];
+  const ships = (path) => files.some((f) =>
+    f.endsWith("/") ? path.startsWith(f) : f === path);
+
+  const linked = new Set();
+  for (const m of readme.matchAll(/\]\(https:\/\/[^)]+?\/blob\/[^/]+\/([^)#]+)\)/g)) {
+    linked.add(m[1]);
+  }
+
+  const dangling = new Set();
+  for (const m of readme.matchAll(/`([A-Za-z0-9_-]+(?:\/[A-Za-z0-9_.-]+)*\.(?:md|mjs|js|json))`/g)) {
+    const path = m[1];
+    // Bare filenames the prose uses as a name the reader will type or create,
+    // not as a pointer into the repo.
+    if (path === "example.reqtrail.json") continue;
+    if (ships(path) || linked.has(path)) continue;
+    dangling.add(path);
+  }
+  if (dangling.size) {
+    // A Set, not an array: a doc cited twice was reported twice, which made a
+    // one-file problem read as a two-file one. Found by running the mutants.
+    throw new Error(
+      `README cites ${dangling.size} path(s) absent from the tarball and not ` +
+      `linked: ${[...dangling].join(", ")}`);
+  }
+  return true;
+});
+
+check("every README link into this repo points at a file that exists", () => {
+  // The cost of the link route: a rename breaks the link silently, and npm
+  // freezes the broken link for the life of the release. So the targets are
+  // checked to exist on disk at publish time.
+  const missing = [];
+  for (const m of readme.matchAll(/\]\((https:\/\/github\.com\/antrixy\/reqtrail\/blob\/[^/]+\/([^)#]+))\)/g)) {
+    try { readSource(m[2]); } catch { missing.push(m[2]); }
+  }
+  if (missing.length) {
+    throw new Error(`README links to non-existent path(s): ${missing.join(", ")}`);
+  }
+  return true;
 });
 
 // ------------------------------------------------------------- tripwire ----
