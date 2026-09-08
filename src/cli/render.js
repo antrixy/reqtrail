@@ -75,6 +75,14 @@ export function renderDiagnostics(result) {
   return out.length ? out.join("\n") + "\n" : "";
 }
 
+// What `run` did. One line, after the projection, so the request and what
+// happened to it read as one block.
+export function renderResponse(result) {
+  if (result.sent) return `\n${result.response.status}\n`;
+  if (result.transport) return `\nnot sent: ${esc(result.transport.code)}\n`;
+  return "\nnot sent\n";
+}
+
 export function renderRefusal(detail) {
   const where = detail.path ? `${detail.path}: ` : "";
   return `reqtrail: ${where}${detail.cause} [${detail.code}]\n`;

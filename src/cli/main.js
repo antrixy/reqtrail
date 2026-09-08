@@ -12,25 +12,34 @@
 //   0  resolved completely
 //   1  refused, or resolved with an unresolved reference — edit something
 //   2  usage error — fix the command
-//   3  send attempted and failed — UNREACHABLE while there is no transport
+//   3  send attempted and failed — REACHABLE from 0.3.0. It carried the label
+//      UNREACHABLE since 0.1.0, and every assertion that nothing is sent is now
+//      a claim about behaviour rather than a statement of fact.
+//
+// A NON-2xx RESPONSE IS EXIT 0. The send succeeded; the server answered. Exit 3
+// means the bytes did not get there.
 
 import { readFileSync } from "node:fs";
-import { resolveWorkspace } from "../core/prepare.js";
+import { resolveWorkspace, run } from "../core/prepare.js";
 import { Refusal, StartupFailure } from "../core/errors.js";
-import { renderResolve, renderDiagnostics, renderRefusal } from "./render.js";
+import { renderResolve, renderResponse, renderDiagnostics, renderRefusal } from "./render.js";
 
 export const VERSION = "0.2.0";
 
 const USAGE = `reqtrail ${VERSION} — see the request before it is sent
 
   reqtrail resolve <file> [--request <id>] [--json]
+  reqtrail run <file> [--request <id>] [--json]
   reqtrail ui <file> [--request <id>]
   reqtrail --version
   reqtrail --help
 
-This release resolves and displays requests. It does not send them.
+resolve shows the request. run shows it and then sends it, over plain HTTP
+only; an https:// URL is refused rather than downgraded.
 
-Exit codes: 0 resolved · 1 refused or unresolved · 2 usage.
+Exit codes: 0 resolved, or sent and answered · 1 refused or unresolved
+· 2 usage · 3 send attempted and failed.
+A non-2xx response is exit 0: the send worked and the server answered.
 Test != 0 rather than equality; codes may be added.
 `;
 
@@ -42,7 +51,7 @@ function parseArgs(argv) {
   if (command === "--help" || command === "-h" || command === undefined) {
     return { command: "help" };
   }
-  if (command !== "resolve" && command !== "ui") {
+  if (command !== "resolve" && command !== "run" && command !== "ui") {
     throw new Usage(`unknown command "${command}"`);
   }
 
@@ -50,7 +59,7 @@ function parseArgs(argv) {
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === "--json") {
-      if (command !== "resolve") throw new Usage("--json applies to resolve only");
+      if (command === "ui") throw new Usage("--json applies to resolve and run only");
       opts.json = true;
     } else if (a === "--request") {
       opts.requestId = rest[++i];
@@ -133,12 +142,23 @@ export async function main(argv, io = process) {
   }
 
   try {
-    const result = resolveWorkspace(text, {
-      requestId: opts.requestId, env, source: opts.file,
-    });
+    const opt = { requestId: opts.requestId, env, source: opts.file };
+    const result = opts.command === "run"
+      ? await run(text, opt)
+      : resolveWorkspace(text, opt);
     if (opts.json) out(JSON.stringify(result, null, 2) + "\n");
-    else out(renderResolve(result));
+    else {
+      out(renderResolve(result));
+      if (opts.command === "run") out(renderResponse(result));
+    }
     err(renderDiagnostics(result));
+    // EXIT 3 ONLY WHEN A SEND WAS ATTEMPTED AND FAILED. An unresolved reference
+    // is exit 1 under `run` exactly as under `resolve` — nothing was sent, and
+    // the instruction is still "edit something", not "the network broke".
+    if (opts.command === "run") {
+      if (!result.resolvable) return 1;
+      return result.sent ? 0 : 3;
+    }
     // resolve exits 1 when it cannot fully resolve WHILE STILL PRINTING
     // everything. Printing and the exit code are independent channels: the
     // human gets the diagnosis, the script gets "not sendable".
