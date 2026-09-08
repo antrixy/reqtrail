@@ -56,6 +56,18 @@ import { refuse } from "./errors.js";
 import { segment, allResolved } from "./grammar.js";
 import { normalizeUrl, hostFromHref, MASK } from "./url.js";
 import { exactFromSegments, project } from "./exact.js";
+// THE TRANSPORT IS IMPORTED, NOT INJECTED, and the choice is worth stating.
+//
+// A `send` passed in by the caller would keep the core free of I/O, which is
+// the usual reason to do it. It would also hand the EXACT REQUEST — real secret
+// bytes — to a function the core did not write. The containment rule says
+// secret bytes exist inside the core's private preparation and nowhere else; a
+// callback seam makes "the core's private preparation" an open set that any
+// adapter can extend, and a rule about an open set is not checkable.
+//
+// So the transport joins the core's private graph. `test/selftest.mjs` checks
+// that no adapter imports it.
+import { send } from "../transport/http.js";
 
 // The set node:http accepts, established by exhaustive measurement over
 // U+0000-U+10FF plus samples above. Written as an allowlist so that a character
@@ -343,6 +355,55 @@ export function inspect(text, options) {
 
 // The name every adapter already imports. `inspect` is what it does.
 export const resolveWorkspace = inspect;
+
+// A transport error's CODE and nothing else.
+//
+// MEASURED 2026-09-08, and this is the reason the function exists rather than
+// `{ code: e.code }` at the call site: node's transport errors carry values in
+// their prose.
+//
+//     getaddrinfo ENOTFOUND secret-host.invalid
+//     connect ECONNREFUSED 127.0.0.1:1
+//
+// A secret can be the hostname — `http://{{$env.H}}/p` is a workspace reqtrail
+// accepts and masks correctly everywhere else. Surfacing `e.message`, or
+// copying `e.hostname`, `e.address` or `e.port`, would put it on a channel that
+// did not exist before this release. Codes are symbolic and carry no value from
+// the request, and the shape is CHECKED rather than the names being listed, so
+// a code nobody anticipated is still safe or still refused.
+const CODE_SHAPE = /^[A-Za-z][A-Za-z0-9_.-]*$/;
+function transportCode(e) {
+  return typeof e?.code === "string" && CODE_SHAPE.test(e.code)
+    ? e.code : "transport.failed";
+}
+
+// USE CASE: run. The SECOND consumer of the pair, and the reason the pair
+// exists. It reads `exact`; `inspect` reads `view`; neither builds a request.
+//
+// It returns the same public document `inspect` does, plus what happened. The
+// projection is present whether or not anything was sent, because the diagnosis
+// is the product and withholding it on a failed send would remove exactly the
+// information the user needs.
+//
+// NOTHING IS SENT WHEN A REFERENCE IS UNRESOLVED. `resolvable` already means
+// "every reference has a value"; sending a request built around a literal
+// `{{$env.NOPE}}` would be reqtrail transmitting something it just told the
+// user is not a request.
+//
+// A NON-2xx RESPONSE IS A SUCCESSFUL SEND. 404 means the transport worked and
+// the server answered. `sent` records whether bytes went out, not whether the
+// user liked the answer — the same distinction the UI draws when a core refusal
+// arrives as HTTP 200.
+export async function run(text, options) {
+  const { exact, view } = prepareFromWorkspace(text, options);
+  const document = { schemaVersion: SCHEMA_VERSION, ...view };
+  if (!view.resolvable) return { ...document, sent: false };
+  try {
+    return { ...document, sent: true, response: await send(exact) };
+  } catch (e) {
+    return { ...document, sent: false, transport: { code: transportCode(e) } };
+  }
+}
 
 // Exported for the P-DERIVE check ONLY. It returns secret bytes, and no
 // adapter, renderer or protocol path may call it — `test/selftest.mjs` checks
