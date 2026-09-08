@@ -13,12 +13,31 @@
 //
 // CORRECTED AGAIN 2026-09-05, and the second correction is the instructive one.
 // The replacement sentence said `src/core/url.js` is THE ONE PLACE a resolved
-// secret exists. That is also false. Measured: eight sites across three modules
-// read `env[key]` —
+// secret exists. That is also false. Measured 2026-09-05: eight sites across
+// three modules read `env[key]` —
 //
-//   grammar.js   nested-template check, set-but-empty check
+//   grammar.js   nested-template check, set-but-empty check, plain()
 //   prepare.js   probe(), the control-character scan, the charset scan
 //   url.js       normalization, span attribution
+//
+// RE-MEASURED 2026-09-07 at the boundary split, AND THE NUMBER DID NOT IMPROVE:
+// still eight sites, now across FOUR modules —
+//
+//   grammar.js   nested-template check, set-but-empty check, plain()
+//   prepare.js   the control-character scan, the charset scan
+//   url.js       normalization, span attribution
+//   exact.js     exactFromSegments()
+//
+// `probe()` did not disappear; it MOVED into the exact request's construction,
+// where the string it built is now kept instead of discarded. That is the
+// prediction B5 made and it is held on its wording — but the count is the same
+// and the module list got longer, which is worth stating plainly rather than
+// reporting the move as a reduction.
+//
+// It is also why the containment rule below is written about OUTPUTS. Two
+// releases have now touched this and the site count has not gone down once. A
+// guarantee phrased as "only these modules" would have needed rewriting both
+// times; the output property needed no change and stayed green throughout.
 //
 // A false absolute was replaced with a narrower false absolute, inside a
 // correction whose subject was that an unchecked absolute is what hid a defect.
@@ -34,22 +53,15 @@
 // list is what made it wrong twice.
 
 import { refuse } from "./errors.js";
-import { segment, masked, allResolved } from "./grammar.js";
+import { segment, allResolved } from "./grammar.js";
 import { normalizeUrl, MASK } from "./url.js";
+import { exactFromSegments, project } from "./exact.js";
 
 // The set node:http accepts, established by exhaustive measurement over
 // U+0000-U+10FF plus samples above. Written as an allowlist so that a character
 // nobody thought about is refused rather than admitted.
 const HEADER_VALUE_OK = /[\t\u0020-\u007e\u0080-\u00ff]/;
 import { parseWorkspace, selectRequest, SCHEMA_VERSION } from "./parse.js";
-
-// A control-character probe that never materialises a secret it does not have
-// to: unresolved references contribute their written form, which contains none.
-const probe = (segs, env) =>
-  segs.map((s) => (s.kind === "literal" ? s.text
-    : !s.resolved ? s.written
-    : s.secret ? env[s.key]
-    : s.value)).join("");
 
 const publicSegment = (s) => {
   if (s.kind === "literal") return { kind: "literal", text: s.text };
@@ -85,7 +97,12 @@ export function prepareRequest(request, variables, env) {
     //
     // CR, LF and NUL keep their own code. They are a header-injection attempt,
     // not a typo, and the remedy differs.
-    const flat = probe(segs, env);
+    // The exact header value and the control-character probe are THE SAME
+    // STRING. It used to be computed here, scanned, and thrown away, while the
+    // masked view was rebuilt from the segments independently. Now it is built
+    // once, scanned, and kept as part of the exact request.
+    const exactValue = exactFromSegments(segs, env);
+    const flat = exactValue.text;
     if (/[\r\n\0]/.test(flat)) {
       const culprit = segs.find((s) =>
         s.kind !== "literal" && s.resolved &&
@@ -136,7 +153,7 @@ export function prepareRequest(request, variables, env) {
       warnings.push({ code: "header.whitespace", path,
         cause: "header value has leading or trailing whitespace" });
     }
-    return { name: h.name, path, segs };
+    return { name: h.name, path, segs, exact: exactValue };
   });
 
   const collect = (segs, path) => {
@@ -168,14 +185,20 @@ export function prepareRequest(request, variables, env) {
   let urlView;
   if (urlResolved) {
     const n = normalizeUrl(urlSegs, env, "url");
-    urlView = { display: n.display, normalized: n.normalized, spans: n.spans };
+    urlView = {
+      exact: { text: n.href, secretRanges: n.secretRanges },
+      normalized: n.normalized, spans: n.spans,
+    };
     if (n.hadFragment) {
       warnings.push({ code: "url.fragment", path: "url",
         cause: "fragment dropped — fragments are never transmitted" });
     }
   } else {
+    // Not normalized, so concatenation is the whole rule and the same helper
+    // the headers use applies. This branch used to call `masked()` directly,
+    // which was a third place that knew how to hide a secret.
     urlView = {
-      display: masked(urlSegs), normalized: false,
+      exact: exactFromSegments(urlSegs, env), normalized: false,
       spans: urlSegs.filter((s) => s.kind !== "literal").map(() => ({
         determined: false, transformed: false,
       })),
@@ -204,23 +227,37 @@ export function prepareRequest(request, variables, env) {
     }
   }
 
+  // THE EXACT REQUEST. Private, carries real secret bytes, and is the only
+  // thing the projection is built from. It is deliberately NOT part of the
+  // returned object — see `resolveWorkspace` below, which is where the boundary
+  // is enforced rather than merely intended.
+  const exact = {
+    method: request.method,
+    url: urlView.exact,
+    headers: headerSegs.map((h) => ({ name: h.name, value: h.exact })),
+  };
+
+  // THE PAIR, and the two halves are SIBLINGS rather than one nested in the
+  // other. An earlier draft returned `{ exact, ...publicFields }`, which is one
+  // spread away from putting secret bytes on stdout: any consumer writing
+  // `{ ...result }` would have carried it. Siblings mean reaching the exact
+  // request requires naming it, and naming it is what the checks look for.
   return {
-    request: { id: request.id, name: request.name },
-    projection: {
-      method: request.method,
-      url: urlView.display,
-      headers: headerSegs.map((h) => ({ name: h.name, value: masked(h.segs) })),
+    exact,
+    view: {
+      request: { id: request.id, name: request.name },
+      projection: project(exact),
+      urlNormalized: urlView.normalized,
+      urlResolved,
+      segments: {
+        url: urlSegs.map(publicSegment),
+        headers: headerSegs.map((h) => ({ name: h.name, value: h.segs.map(publicSegment) })),
+      },
+      provenance,
+      warnings,
+      unresolved,
+      resolvable: unresolved.length === 0,
     },
-    urlNormalized: urlView.normalized,
-    urlResolved,
-    segments: {
-      url: urlSegs.map(publicSegment),
-      headers: headerSegs.map((h) => ({ name: h.name, value: h.segs.map(publicSegment) })),
-    },
-    provenance,
-    warnings,
-    unresolved,
-    resolvable: unresolved.length === 0,
   };
 }
 
@@ -245,12 +282,35 @@ function row(path, s, span, urlWasNormalized) {
   return out;
 }
 
-// The single core entry point. Adapters call this and render what comes back.
-export function resolveWorkspace(text, { requestId, env, source } = {}) {
+// THE ONE CONSTRUCTION PATH. Returns the pair: the private exact request and
+// the public view derived from it. Not exported — a use case is exported
+// instead, so that adding `run` in 0.3.0 means adding a CONSUMER of this pair
+// rather than a second way to build a request.
+function prepareFromWorkspace(text, { requestId, env, source } = {}) {
   const workspace = parseWorkspace(text, source ?? "workspace");
   const request = selectRequest(workspace, requestId);
-  const result = prepareRequest(request, workspace.variables, env ?? {});
-  return { schemaVersion: SCHEMA_VERSION, ...result };
+  return prepareRequest(request, workspace.variables, env ?? {});
 }
+
+// USE CASE: inspect. Consumes the pair and yields ONLY the public half.
+//
+// This is where the boundary is enforced rather than intended. `run` will be
+// the second use case, consuming the SAME pair and reading `exact` — which is
+// the whole point of the split, and the reason it ships before any transport
+// code exists. If `run` had come first, the cheapest available move would have
+// been to build a second request for sending, and two construction paths
+// falsify the claim reqtrail makes.
+export function inspect(text, options) {
+  const { view } = prepareFromWorkspace(text, options);
+  return { schemaVersion: SCHEMA_VERSION, ...view };
+}
+
+// The name every adapter already imports. `inspect` is what it does.
+export const resolveWorkspace = inspect;
+
+// Exported for the P-DERIVE check ONLY. It returns secret bytes, and no
+// adapter, renderer or protocol path may call it — `test/selftest.mjs` checks
+// that no file outside the core names it.
+export { prepareFromWorkspace as __prepareForTest };
 
 export { SCHEMA_VERSION };

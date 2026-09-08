@@ -90,10 +90,17 @@ function parse(str, display, path) {
   return { href: u.href, hadFragment };
 }
 
-// Returns { display, normalized, hadFragment, spans } where spans[i] describes
-// substituted segment i: { determined, produced?, transformed }. `produced` is
-// omitted for secret spans — the caller learns THAT the bytes changed, never
-// what they became.
+// Returns { href, secretRanges, normalized, hadFragment, spans } where spans[i]
+// describes substituted segment i: { determined, produced?, transformed }.
+// `produced` is omitted for secret spans — the caller learns THAT the bytes
+// changed, never what they became.
+//
+// `href` CARRIES REAL SECRET BYTES and is part of the exact request. This
+// module used to mask it here and return only the masked form. It no longer
+// does: masking is `project()`'s only job, and doing it in two places is the
+// second construction path the boundary release exists to remove. What comes
+// back is the exact URL and the byte ranges that came from secrets; the caller
+// puts both into the exact request and never renders either.
 export function normalizeUrl(segs, env, path) {
   const raw = plain(segs, env);
   const { href, hadFragment } = parse(raw, masked(segs), path);
@@ -180,13 +187,7 @@ export function normalizeUrl(segs, env, path) {
     }
   }
 
-  let display = href;
-  for (let i = secretRanges.length - 1; i >= 0; i--) {
-    const { start, end } = secretRanges[i];
-    display = display.slice(0, start) + MASK + display.slice(end);
-  }
-
-  return { display, normalized: href !== raw, hadFragment, spans: results };
+  return { href, secretRanges, normalized: href !== raw, hadFragment, spans: results };
 }
 
 export { MASK };
