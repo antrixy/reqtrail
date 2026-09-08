@@ -6,8 +6,13 @@ const base = `http://127.0.0.1:${r.port}`;
 const ENV = { API_TOKEN: "s3cr3t-value", EMPTY: "" };
 
 async function send(p) {
-  const m = p.materialize(); const u = new URL(m.url); const headers = {};
-  for (const x of m.headers) headers[x.name] = x.name in headers ? [].concat(headers[x.name], x.value) : x.value;
+  // Flat array, matching run.mjs's repaired send side (2026-09-08). Output
+  // verified byte-identical before and after: no fixture here has a repeated
+  // or differently-cased header name, so the object form was a no-op for this
+  // set. Changed anyway — leaving the mechanism in a sibling file is how it
+  // came back after probe-dup.mjs already caught it once.
+  const m = p.materialize(); const u = new URL(m.url); const headers = [];
+  for (const x of m.headers) headers.push(x.name, x.value);
   return new Promise((res, rej) => { const q = http.request({ host:u.hostname, port:u.port,
     path:u.pathname+u.search, method:m.method, headers });
     q.on("response", s=>{s.resume();s.on("end",res);}); q.on("error",rej); q.end(); });
