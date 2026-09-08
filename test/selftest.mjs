@@ -96,7 +96,7 @@ check("duplicate id refuses", () =>
 check("id charset enforced", () =>
   refusal(() => go(ws({ requests: [{ id: "a b", method: "GET", url: "https://a.example" }] })))
     .code === "schema.id.charset");
-check("POST refused in 0.1.0", () =>
+check("POST refused while there is no transport", () =>
   refusal(() => go(ws({ requests: [{ id: "r", method: "POST", url: "https://a.example" }] })))
     .code === "schema.method");
 check("lowercase get refused", () =>
@@ -481,8 +481,15 @@ check("missing file exits 2", () => run(["resolve", "/nonexistent.json"]).code =
 check("--request with no value exits 2", () =>
   run(["resolve", exFile, "--request"]).code === 2);
 check("--json with ui exits 2", () => run(["ui", exFile, "--json"]).code === 2);
-check("--version prints only the version", () =>
-  run(["--version"]).stdout.trim() === "0.1.0");
+check("--version prints only the version, and nothing else", () => {
+  // WAS `=== "0.1.0"`, the fifth value-pin found in this pass. It duplicated
+  // the package.json comparison further down while adding a literal that had
+  // to be edited on every release. What is actually being asserted here is
+  // SHAPE — one bare semver line, no banner, no trailing prose — so that is
+  // what it now checks, leaving version identity to the one check that owns it.
+  const out = run(["--version"]).stdout;
+  return /^\d+\.\d+\.\d+\n?$/.test(out);
+});
 check("--help exits 0", () => run(["--help"]).code === 0);
 check("help says nothing is sent", () =>
   run(["--help"]).stdout.includes("does not send"));
@@ -630,8 +637,36 @@ check("the README's workspace example resolves", () => {
   const r = resolveWorkspace(block[1], { env: { API_TOKEN: "x" }, source: "README" });
   return r.resolvable === true && r.projection.headers.length === 3;
 });
-check("the README does not claim this release sends anything", () =>
-  readme.includes("0.1.0 sends nothing"));
+// REWRITTEN 2026-09-07, and this is the third guard in two days that pinned an
+// artifact's CURRENT VALUE rather than the PROPERTY it was defending.
+//
+// It required the literal string "0.1.0 sends nothing". That string is a lie in
+// every release after 0.1.0, so the guard would have had to be edited on every
+// publish — and until it was, it would have BLOCKED the correction it existed
+// to protect. A guard that must be disabled to fix the thing it guards is
+// worse than no guard.
+//
+// It matters more here than in the repo, because **npm serves the README from
+// the published tarball**: whatever wording ships is frozen against that
+// version forever and cannot be edited without publishing again. A
+// version-agnostic claim is true in every snapshot; a version-pinned one is a
+// future lie in every snapshot but the one it shipped with. npm's page for
+// 0.1.0 is currently proof of that — it still tells visitors `run` arrives in
+// 0.2.0, because the repo fix cannot reach it.
+//
+// So the property is pinned instead: the README claims no transport, without
+// naming a version, and the core has no transport for it to be wrong about.
+// When `run` lands in 0.3.0 this fails loudly and correctly.
+check("the README's no-transport claim is version-agnostic", () => {
+  if (!readme.includes("This release sends nothing")) {
+    throw new Error("the README no longer claims this release sends nothing");
+  }
+  const pinned = readme.match(/\b\d+\.\d+\.\d+ (sends nothing|has no transport)/);
+  if (pinned) {
+    throw new Error(`the claim is pinned to a version: "${pinned[0]}"`);
+  }
+  return true;
+});
 // The evidence document drifted to 129 against a suite of 155 once already, and
 // a stranger reads it first to decide whether the release's claims are backed.
 // The counts it quotes are checkable, so they are checked — the same argument as
@@ -659,12 +694,40 @@ check("EVIDENCE-0.1.0.md stays frozen at the count v0.1.0 actually shipped", () 
   return true;
 });
 
+// POSITION-DEPENDENT WHEN FIRST WRITTEN, and found during the post-commit
+// verification rather than by the check itself. `.match()` returns the FIRST
+// hit, and this document legitimately contains a `selftest 159/159` in the
+// prose explaining why EVIDENCE-0.1.0.md stays frozen. It passed only because
+// the live counts happened to appear earlier in the file. Moving a section
+// would have made it read the wrong number — silently, since 159 is a real
+// count that a stranger would not question.
+//
+// So every quoted count is collected and the DISAGREEING ones are named. A
+// count matching the frozen 159 is allowed only where the surrounding line
+// marks it as the historical value.
 check("BOUNDARY-EVIDENCE.md quotes this suite's actual count", () => {
   const ev = readSource("BOUNDARY-EVIDENCE.md");
-  const m = ev.match(/selftest\s+(\d+)\/(\d+)/);
-  if (!m) throw new Error("BOUNDARY-EVIDENCE.md no longer quotes a selftest count");
-  if (Number(m[2]) !== EXPECTED) {
-    throw new Error(`BOUNDARY-EVIDENCE says ${m[1]}/${m[2]}, suite runs ${EXPECTED}`);
+  const lines = ev.split("\n");
+  const quoted = [];
+  lines.forEach((line, n) => {
+    const m = line.match(/selftest\s+(\d+)\/(\d+)/);
+    if (m) quoted.push({ n: n + 1, total: Number(m[2]), line });
+  });
+  if (!quoted.length) {
+    throw new Error("BOUNDARY-EVIDENCE.md no longer quotes a selftest count");
+  }
+  // The filter is on the COUNT, not on the line's wording. A first attempt
+  // excluded any line mentioning v0.1.0 and thereby excluded the live line
+  // itself, which reads "169/169  was 159 at v0.1.0". Wording is not a reliable
+  // discriminator when the live line has to explain the historical one.
+  if (!quoted.some((q) => q.total === EXPECTED)) {
+    throw new Error(`no quoted count matches the suite's ${EXPECTED}`);
+  }
+  const stray = quoted.filter((q) =>
+    q.total !== EXPECTED && !/v0\.1\.0|frozen|historical/.test(q.line));
+  if (stray.length) {
+    throw new Error(
+      `line ${stray[0].n} quotes ${stray[0].total} unmarked; suite runs ${EXPECTED}`);
   }
   return true;
 });
