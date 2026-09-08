@@ -12,7 +12,7 @@ import { project } from "../src/core/exact.js";
 import { parseWorkspace, selectRequest } from "../src/core/parse.js";
 import { Refusal } from "../src/core/errors.js";
 
-const EXPECTED = 171;
+const EXPECTED = 184;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -87,8 +87,22 @@ check("non-string variable names the path", () =>
   refusal(() => go(one("https://a.example", [], { n: 42 }))).path === "variables.n");
 check("variables optional", () =>
   go(ws({ requests: [{ id: "r", method: "GET", url: "https://a.example" }] })).projection.method === "GET");
+// WHAT THE WORKSPACE DECLARED, as distinct from what reqtrail derived.
+//
+// Ten checks below used to index `projection.headers` directly and pin its
+// LENGTH. Adding the derived `Host` shifted every index by one and every count
+// by one, and all ten went red at once — not because a property broke, but
+// because each had pinned the array's shape on the day it was written. That is
+// 9d, and one of them sits directly under a comment about 9d.
+//
+// Shifting the indices by one would have been the same defect with a new
+// number. These select on `origin` instead, which is the property each check
+// was actually defending: this VALUE is masked, these DUPLICATES survive, this
+// CASING is preserved. A future derived header moves none of them.
+const wh = (r) => r.projection.headers.filter((h) => h.origin === "workspace");
+
 check("headers optional", () =>
-  go(ws({ requests: [{ id: "r", method: "GET", url: "https://a.example" }] })).projection.headers.length === 0);
+  wh(go(ws({ requests: [{ id: "r", method: "GET", url: "https://a.example" }] }))).length === 0);
 check("duplicate id refuses", () =>
   refusal(() => go(ws({ requests: [
     { id: "r", method: "GET", url: "https://a.example" },
@@ -163,7 +177,7 @@ check("the variable charset matches the grammar's", () =>
 // `}}` closes any nested JSON object, and values here routinely contain JSON.
 check("a stray }} is literal, not refused", () =>
   go(one("https://a.example", [{ name: "A", value: '{"a":{"b":1}}' }]))
-    .projection.headers[0].value === '{"a":{"b":1}}');
+    .projection.headers.filter((h) => h.origin === "workspace")[0].value === '{"a":{"b":1}}');
 check("an unclosed {{ is still refused", () =>
   refusal(() => go(one("https://a.example/{{x"))).code === "grammar.unmatched");
 
@@ -326,7 +340,7 @@ const withSecret = (u, headers) => go(one(u, headers), { API_TOKEN: SECRET });
 
 check("secret masked in a header", () =>
   withSecret("https://a.example", [{ name: "a", value: "Bearer {{$env.API_TOKEN}}" }])
-    .projection.headers[0].value === "Bearer \u2022\u2022\u2022\u2022");
+    .projection.headers.filter((h) => h.origin === "workspace")[0].value === "Bearer \u2022\u2022\u2022\u2022");
 check("secret absent from the whole result", () =>
   !JSON.stringify(withSecret("https://a.example",
     [{ name: "a", value: "Bearer {{$env.API_TOKEN}}" }])).includes(SECRET));
@@ -368,7 +382,7 @@ check("unset env is unresolved, not refused", () => {
 });
 check("unset env still renders the request", () =>
   go(one("https://a.example", [{ name: "a", value: "{{$env.NOPE}}" }]), {})
-    .projection.headers[0].value === "{{$env.NOPE}}");
+    .projection.headers.filter((h) => h.origin === "workspace")[0].value === "{{$env.NOPE}}");
 check("unresolved names the variable", () =>
   go(one("https://a.example", [{ name: "a", value: "{{$env.NOPE}}" }]), {})
     .unresolved[0].variable === "NOPE");
@@ -406,21 +420,78 @@ check("a resolved url with an unresolved header still normalizes", () => {
 check("duplicate header names survive", () => {
   const r = go(one("https://a.example", [
     { name: "X-Tag", value: "alpha" }, { name: "X-Tag", value: "beta" }]));
-  return r.projection.headers.length === 2 && r.projection.headers[1].value === "beta";
+  return wh(r).length === 2 && wh(r)[1].value === "beta";
 });
 check("P3 identical name AND value survive as two", () => {
   const r = go(one("https://a.example", [
     { name: "X-Tag", value: "same" }, { name: "X-Tag", value: "same" }]));
-  return r.projection.headers.length === 2;
+  return wh(r).length === 2;
 });
 check("header casing preserved", () =>
   go(one("https://a.example", [{ name: "Authorization", value: "x" }]))
-    .projection.headers[0].name === "Authorization");
+    .projection.headers.filter((h) => h.origin === "workspace")[0].name === "Authorization");
 check("header order preserved", () => {
   const r = go(one("https://a.example", [
     { name: "a", value: "1" }, { name: "b", value: "2" }, { name: "c", value: "3" }]));
-  return r.projection.headers.map((h) => h.name).join("") === "abc";
+  return wh(r).map((h) => h.name).join("") === "abc";
 });
+// ---- THE DERIVED Host HEADER -------------------------------------------------
+// Added 2026-09-08. `Host` is derived in the core, from the normalized URL,
+// because under a flat header array node:http supplies none and a real server
+// answers 400 without one. An adapter deriving it would be a second
+// construction path and would compute it with no secret ranges attached.
+
+const host = (r) => r.projection.headers.filter((h) => h.origin === "derived");
+
+check("Host is derived, and there is exactly one derived header", () => {
+  const r = go(one("https://a.example/p"));
+  return host(r).length === 1 && host(r)[0].name === "Host";
+});
+check("Host is FIRST, so the wire order is the displayed order", () =>
+  go(one("https://a.example/p")).projection.headers[0].name === "Host");
+check("Host omits a default port", () =>
+  host(go(one("https://a.example:443/p")))[0].value === "a.example");
+check("Host KEEPS a non-default port", () =>
+  host(go(one("http://a.example:8080/p")))[0].value === "a.example:8080");
+check("Host excludes userinfo — it carries host and port only", () =>
+  host(go(one("http://user:pw@a.example/p")))[0].value === "a.example");
+check("Host is ABSENT when the URL does not resolve", () =>
+  host(go(one("{{nope}}/p"))).length === 0);
+check("a secret in the hostname is MASKED in Host", () => {
+  const r = go(one("https://{{$env.H}}/p"), { H: "secret.internal" });
+  return host(r)[0].value === "\u2022\u2022\u2022\u2022";
+});
+check("a secret hostname is absent from the WHOLE result", () => {
+  const r = go(one("https://{{$env.H}}/p"), { H: "secret.internal" });
+  return !JSON.stringify(r).includes("secret.internal");
+});
+check("a workspace may not declare its own Host", () =>
+  refusal(() => go(ws({ requests: [{ id: "r", method: "GET",
+    url: "https://a.example/p",
+    headers: [{ name: "Host", value: "evil.example" }] }] }))).code === "header.host");
+check("a declared host is refused whatever its casing", () =>
+  refusal(() => go(ws({ requests: [{ id: "r", method: "GET",
+    url: "https://a.example/p",
+    headers: [{ name: "hOsT", value: "evil.example" }] }] }))).code === "header.host");
+check("EVERY projection header carries an origin", () => {
+  const r = go(ws({ requests: [{ id: "r", method: "GET", url: "https://a.example/p",
+    headers: [{ name: "X-A", value: "1" }, { name: "X-B", value: "2" }] }] }));
+  return r.projection.headers.length === 3 &&
+    r.projection.headers.every((h) => h.origin === "workspace" || h.origin === "derived");
+});
+// STRUCTURAL, not behavioural. `origin` must be COPIED by project(), never
+// recomputed: a second place that knows which headers reqtrail adds is the
+// shape the boundary release exists to have exactly one of. A mutant that
+// rebuilds it from the header name passes every check above.
+check("project() copies origin rather than deciding it", () => {
+  const src = stripComments(readSource("src/core/exact.js"));
+  return /origin:\s*h\.origin/.test(src) && !/origin:\s*["'`]/.test(src);
+});
+check("Host is assigned in exactly ONE place in the core", () => {
+  const src = stripComments(readSource("src/core/prepare.js"));
+  return (src.match(/name:\s*"Host"/g) ?? []).length === 1;
+});
+
 check("empty header value warns, not refused", () => {
   const r = go(one("https://a.example", [{ name: "a", value: "" }]));
   return r.resolvable === true && r.warnings.some((w) => w.code === "header.empty");
@@ -635,7 +706,7 @@ check("the README's first command works, as written", () => {
 check("the README's workspace example resolves", () => {
   const block = readme.match(/```json\n([\s\S]*?)```/);
   const r = resolveWorkspace(block[1], { env: { API_TOKEN: "x" }, source: "README" });
-  return r.resolvable === true && r.projection.headers.length === 3;
+  return r.resolvable === true && wh(r).length === 3;
 });
 // REWRITTEN 2026-09-07, and this is the third guard in two days that pinned an
 // artifact's CURRENT VALUE rather than the PROPERTY it was defending.
@@ -705,32 +776,41 @@ check("EVIDENCE-0.1.0.md stays frozen at the count v0.1.0 actually shipped", () 
 // So every quoted count is collected and the DISAGREEING ones are named. A
 // count matching the frozen 159 is allowed only where the surrounding line
 // marks it as the historical value.
-check("BOUNDARY-EVIDENCE.md quotes this suite's actual count", () => {
-  const ev = readSource("BOUNDARY-EVIDENCE.md");
-  const lines = ev.split("\n");
-  const quoted = [];
-  lines.forEach((line, n) => {
-    const m = line.match(/selftest\s+(\d+)\/(\d+)/);
-    if (m) quoted.push({ n: n + 1, total: Number(m[2]), line });
-  });
-  if (!quoted.length) {
+// CONVERTED FROM A DRIFT GUARD TO A FREEZE GUARD, 2026-09-08, and the reason is
+// 9d recurring rather than a new problem.
+//
+// This was the LIVE half of the split 9d prescribes: freeze guard on
+// EVIDENCE-0.1.0.md, drift guard on BOUNDARY-EVIDENCE.md. That was right on
+// 2026-09-07 and stopped being right the moment v0.2.0 was tagged, published
+// and attested. Adding the Host checks moved the suite 171 -> 184 and this
+// check demanded that a PUBLISHED release's evidence be edited to quote a count
+// that release never had, to stay green. That is 9d's first error exactly, one
+// document later: obeying the guard falsifies the record.
+//
+// THE CLASS, which is worth more than this instance: the split was made once,
+// but nothing ages a live evidence document into a frozen one at publish. Every
+// release turns the previous release's document frozen and leaves a drift guard
+// pointed at it. This will happen again at 0.4.0 unless the transition is part
+// of the release procedure rather than something a failing check discovers.
+//
+// THE DRIFT GUARD IS NOW UNPOINTED, and that is stated rather than hidden.
+// 0.3.0's evidence document does not exist yet, so the guard has no subject —
+// the same reasoning that retired P9. It returns, pointed at
+// TRANSPORT-EVIDENCE.md, when that file is written, and until then NOTHING
+// checks that a live document tracks the suite count.
+check("BOUNDARY-EVIDENCE.md keeps the count v0.2.0 SHIPPED", () => {
+  const doc = readSource("BOUNDARY-EVIDENCE.md");
+  const quoted = [...doc.matchAll(/selftest\s+(\d+)\/(\d+)/g)].map((m) => Number(m[1]));
+  if (quoted.length === 0) {
     throw new Error("BOUNDARY-EVIDENCE.md no longer quotes a selftest count");
   }
-  // The filter is on the COUNT, not on the line's wording. A first attempt
-  // excluded any line mentioning v0.1.0 and thereby excluded the live line
-  // itself, which reads "169/169  was 159 at v0.1.0". Wording is not a reliable
-  // discriminator when the live line has to explain the historical one.
-  if (!quoted.some((q) => q.total === EXPECTED)) {
-    throw new Error(`no quoted count matches the suite's ${EXPECTED}`);
-  }
-  const stray = quoted.filter((q) =>
-    q.total !== EXPECTED && !/v0\.1\.0|frozen|historical/.test(q.line));
-  if (stray.length) {
-    throw new Error(
-      `line ${stray[0].n} quotes ${stray[0].total} unmarked; suite runs ${EXPECTED}`);
+  const wrong = quoted.filter((n) => n !== 171 && n !== 159);
+  if (wrong.length) {
+    throw new Error(`BOUNDARY-EVIDENCE.md says ${wrong.join(", ")}; v0.2.0 shipped 171 and is frozen`);
   }
   return true;
 });
+
 check("EVIDENCE-0.1.0.md records P4 as falsified, not as held", () => {
   const ev = readSource("EVIDENCE-0.1.0.md");
   return /\|\s*P4\s*\|[^|]*\|\s*\*\*WRONG/.test(ev);
