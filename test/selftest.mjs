@@ -7,11 +7,12 @@ import { readFileSync, readdirSync, writeFileSync, mkdtempSync, rmSync } from "n
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { resolveWorkspace } from "../src/core/prepare.js";
+import { resolveWorkspace, __prepareForTest } from "../src/core/prepare.js";
+import { project } from "../src/core/exact.js";
 import { parseWorkspace, selectRequest } from "../src/core/parse.js";
 import { Refusal } from "../src/core/errors.js";
 
-const EXPECTED = 159;
+const EXPECTED = 169;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -635,12 +636,35 @@ check("the README does not claim this release sends anything", () =>
 // a stranger reads it first to decide whether the release's claims are backed.
 // The counts it quotes are checkable, so they are checked — the same argument as
 // the README's worked example.
-check("EVIDENCE-0.1.0.md quotes this suite's actual count", () => {
+// SPLIT 2026-09-07, and the reason matters more than the mechanism.
+//
+// This was ONE check: EVIDENCE-0.1.0.md must quote the suite's current count.
+// It fired correctly when the boundary work added checks — and the fix it was
+// asking for was WRONG. 159/159 is true of v0.1.0: published, tagged, attested,
+// its tree sha recorded in decisions.md. Editing it to match `main` would make
+// a released artifact's evidence false about the release it documents, in order
+// to keep a check green.
+//
+// A frozen artifact must stay frozen; it must not stay WRONG ABOUT ITSELF. That
+// document is frozen and is not wrong. So the drift guard follows the LIVE
+// evidence document, and the frozen one gets a freeze guard instead — pinning
+// the number so that a later session cannot helpfully update it either.
+check("EVIDENCE-0.1.0.md stays frozen at the count v0.1.0 actually shipped", () => {
   const ev = readSource("EVIDENCE-0.1.0.md");
   const m = ev.match(/selftest\s+(\d+)\/(\d+)/);
   if (!m) throw new Error("EVIDENCE-0.1.0.md no longer quotes a selftest count");
+  if (Number(m[2]) !== 159) {
+    throw new Error(`EVIDENCE-0.1.0.md says ${m[2]}; v0.1.0 shipped 159 and is frozen`);
+  }
+  return true;
+});
+
+check("BOUNDARY-EVIDENCE.md quotes this suite's actual count", () => {
+  const ev = readSource("BOUNDARY-EVIDENCE.md");
+  const m = ev.match(/selftest\s+(\d+)\/(\d+)/);
+  if (!m) throw new Error("BOUNDARY-EVIDENCE.md no longer quotes a selftest count");
   if (Number(m[2]) !== EXPECTED) {
-    throw new Error(`EVIDENCE says ${m[1]}/${m[2]}, suite runs ${EXPECTED}`);
+    throw new Error(`BOUNDARY-EVIDENCE says ${m[1]}/${m[2]}, suite runs ${EXPECTED}`);
   }
   return true;
 });
@@ -674,6 +698,146 @@ check("no check in this suite is silenced with an always-true clause", () => {
     }
   }
   return true;
+});
+
+// ------------------------------------------------------- P-DERIVE ---------
+//
+// The boundary release's pass condition. P-CONTAIN is measured by
+// test/leak-audit.mjs across 28 fixtures; these are the derivation half.
+//
+// WHAT THESE CAN AND CANNOT DO, stated because the pre-registration predicted
+// the gap (B3). An output comparison — project(exact) equals the returned
+// projection — CANNOT distinguish a correct second construction path from a
+// derivation, because a second path that computes the same bytes passes it on
+// every input tested. Output equality catches a BROKEN second path, not a
+// working one. So the derivation is enforced STRUCTURALLY as well: exactly one
+// function substitutes the mask into request text, and nothing outside the core
+// can reach the exact request at all. The structural checks are the ones that
+// kill the equivalent-output mutant; the output check is what makes them
+// meaningful rather than cosmetic.
+
+const derivationCorpus = [
+  ["plain", one("https://a.example/x"), {}],
+  ["variable", one("https://a.example/{{v}}", [], { v: "q" }), {}],
+  ["normalizing", one("https://a.example/a b?x={{v}}", [], { v: "c d" }), {}],
+  ["secret in url", one("https://a.example/x?k={{$env.API_TOKEN}}"), { API_TOKEN: SECRET }],
+  ["secret in header", one("https://a.example",
+    [{ name: "Authorization", value: "Bearer {{$env.API_TOKEN}}" }]), { API_TOKEN: SECRET }],
+  ["two secrets", one("https://a.example/{{$env.A}}/{{$env.B}}"), { A: "aaa", B: "bbb" }],
+  ["unresolved url", one("https://a.example/{{nope}}"), {}],
+  ["unresolved secret", one("https://a.example",
+    [{ name: "a", value: "{{$env.NOPE}}" }]), {}],
+  ["mixed", one("https://a.example/{{v}}?k={{$env.API_TOKEN}}",
+    [{ name: "a", value: "x{{v}}y{{$env.API_TOKEN}}z" }], { v: "vv" }),
+    { API_TOKEN: SECRET }],
+];
+
+const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+check("P-DERIVE — the projection is project(exact) for every corpus case", () => {
+  for (const [label, text, env] of derivationCorpus) {
+    const { exact, view } = __prepareForTest(text, { env, source: "t.json" });
+    if (!eq(project(exact), view.projection)) {
+      throw new Error(`${label}: projection is not project(exact)`);
+    }
+  }
+  return true;
+});
+
+check("P-DERIVE — project() is pure: same input, same output, no ambient state", () => {
+  for (const [label, text, env] of derivationCorpus) {
+    const { exact } = __prepareForTest(text, { env, source: "t.json" });
+    if (!eq(project(exact), project(exact))) throw new Error(`${label}: not deterministic`);
+  }
+  const src = stripComments(readSource("src/core/exact.js"));
+  if (/process\.env/.test(src)) throw new Error("exact.js reads ambient process state");
+  return true;
+});
+
+check("the exact request carries real secret bytes — otherwise these checks are vacuous", () => {
+  // WITHOUT THIS, every check here passes on a build where `exact` is masked
+  // too, and the derivation would be a tautology over two identical values.
+  // A positive control, per the rule that an instrument must be shown to fire.
+  const { exact } = __prepareForTest(
+    one("https://a.example/x?k={{$env.API_TOKEN}}"),
+    { env: { API_TOKEN: SECRET }, source: "t.json" });
+  return exact.url.text.includes(SECRET) && exact.url.secretRanges.length === 1;
+});
+
+check("the public view holds no secret bytes although the exact request does", () => {
+  for (const [label, text, env] of derivationCorpus) {
+    const { view } = __prepareForTest(text, { env, source: "t.json" });
+    if (JSON.stringify(view).includes(SECRET)) throw new Error(`${label}: secret in view`);
+  }
+  return true;
+});
+
+check("`exact` never reaches the public result", () => {
+  for (const [, text, env] of derivationCorpus) {
+    const r = resolveWorkspace(text, { env, source: "t.json" });
+    if ("exact" in r) throw new Error("resolveWorkspace returned the exact request");
+  }
+  return true;
+});
+
+check("ONE masking site — nothing outside exact.js substitutes the mask into request text", () => {
+  // THIS CHECK WAS WRITTEN WEAKER AND A MUTANT WALKED PAST IT. The first
+  // version forbade only `maskRanges`. The mutant that beat it did not call
+  // maskRanges: it rebuilt the projection from grammar.js's `masked()`, which
+  // is a genuine second construction path producing byte-identical output. It
+  // survived all 168 checks, exactly as B3 predicted an output comparison would
+  // let it.
+  //
+  // So BOTH maskers are named. `masked()` still has one legitimate caller —
+  // url.js, which needs a masked string for refusal messages before the URL has
+  // parsed — and that is a message, not a request projection, so url.js is
+  // exempt by name rather than by accident.
+  const forbidden = [
+    ["src/core/prepare.js", /maskRanges|\bmasked\s*\(/],
+    ["src/core/parse.js", /maskRanges|\bmasked\s*\(/],
+    ["src/core/grammar.js", /maskRanges/],
+    ["src/cli/render.js", /maskRanges|\bmasked\s*\(/],
+    ["src/cli/main.js", /maskRanges|\bmasked\s*\(/],
+    ["src/server/server.js", /maskRanges|\bmasked\s*\(/],
+    ["src/ui/logic.js", /maskRanges|\bmasked\s*\(/],
+    ["src/ui/main.jsx", /maskRanges|\bmasked\s*\(/],
+  ];
+  for (const [f, pat] of forbidden) {
+    if (pat.test(stripComments(readSource(f)))) {
+      throw new Error(`${f} masks a request value — the mask has a second site`);
+    }
+  }
+  return /export function maskRanges/.test(readSource("src/core/exact.js"));
+});
+
+check("the projection is assigned from project() and from nothing else", () => {
+  // The structural companion to P-DERIVE's output check. A second path has to
+  // be ASSIGNED somewhere, so the assignment site is pinned: `projection:` is
+  // written exactly once in the core and its value is the call.
+  const src = stripComments(readSource("src/core/prepare.js"));
+  const sites = src.match(/projection\s*:/g) ?? [];
+  if (sites.length !== 1) {
+    throw new Error(`${sites.length} projection assignment sites, expected 1`);
+  }
+  return /projection:\s*project\(exact\)/.test(src);
+});
+
+check("no adapter reaches the exact request", () => {
+  const adapters = ["src/cli/render.js", "src/cli/main.js", "src/server/server.js",
+    "src/ui/logic.js", "src/ui/main.jsx", "bin/reqtrail.js"];
+  for (const f of adapters) {
+    const src = stripComments(readSource(f));
+    if (/__prepareForTest|prepareFromWorkspace/.test(src)) {
+      throw new Error(`${f} reaches past inspect() to the construction path`);
+    }
+  }
+  return true;
+});
+
+check("`inspect` is the exported use case and `run` is not one yet", () => {
+  const src = readSource("src/core/prepare.js");
+  return /export function inspect\b/.test(src) &&
+    !/export (function|const) run\b/.test(src);
 });
 
 // ------------------------------------------------------------- tripwire ----
