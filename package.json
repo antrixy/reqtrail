@@ -41,7 +41,7 @@
   "scripts": {
     "build:ui": "node scripts/build-ui.mjs",
     "pretest": "node scripts/build-ui.mjs",
-    "test": "node test/enumerate-refusals.mjs && node test/selftest.mjs && node test/leak-audit.mjs && node test/ui.mjs && node test/parity.mjs && node test/server.mjs && node test/server-slow.mjs",
+    "test": "node test/enumerate-refusals.mjs && node test/selftest.mjs && node test/leak-audit.mjs && node test/ui.mjs && node test/parity.mjs && node test/server.mjs && node test/server-slow.mjs && node test/wire.mjs",
     "test:selftest": "node test/selftest.mjs",
     "test:refusals": "node test/enumerate-refusals.mjs --list",
     "test:leak": "node test/leak-audit.mjs",
@@ -51,7 +51,8 @@
     "test:server": "node test/server.mjs",
     "test:server-slow": "node test/server-slow.mjs",
     "test:mutation": "node test/mutate.mjs",
-    "prepack": "npm test"
+    "prepack": "npm test",
+    "test:wire": "node test/wire.mjs"
   },
   "publishConfig": {
     "access": "public"
