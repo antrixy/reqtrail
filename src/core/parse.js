@@ -213,7 +213,8 @@ export function parseWorkspace(text, source = "workspace") {
     // `name` is optional and is display only — it never selects a request.
     if ("name" in r) str(r, "name", path);
 
-    // GET only in 0.1.0, and stated explicitly in the file rather than
+    // GET only while there is no transport, and stated explicitly in the
+    // file rather than
     // defaulted: when another verb arrives, an existing file must not change
     // meaning.
     const method = str(r, "method", path);
