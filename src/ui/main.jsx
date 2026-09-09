@@ -56,12 +56,26 @@ function RequestLine({ projection }) {
       <code>
         <span className="method">{projection.method}</span>{" "}
         <span className="url">{projection.url}</span>
+        {/* A DERIVED HEADER IS MARKED, matching the CLI. `origin` exists so
+            the document does not assert the user wrote `Host`; a display that
+            ignores it makes exactly that assertion. The marker text is the
+            same string the CLI appends, so the two surfaces cannot drift into
+            saying different things about the same field.
+
+            UNVERIFIED BY `npm test`. This component's wiring is one of the two
+            carried mutation gaps — it needs a browser — so this is checked by
+            a sitting, not by the suite. The DECISION about which headers are
+            derived is in the core and is checked; only the rendering of it is
+            here. */}
         {projection.headers.map((h, i) => (
           <span key={i} className="header-line">
             {"\n"}
             <span className="hname">{h.name}</span>
             <span className="colon">: </span>
             <span className="hvalue">{h.value}</span>
+            {h.origin === "derived" && (
+              <span className="hderived">{"  (derived)"}</span>
+            )}
           </span>
         ))}
       </code>

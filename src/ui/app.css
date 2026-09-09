@@ -119,6 +119,10 @@ nav { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 1.25rem 0 0; }
 .wire .hname { font-weight: 500; }
 .wire .colon, .wire .hvalue { color: var(--quiet); }
 .wire .hvalue { color: var(--ink); }
+/* Quieter than a value, because it is an annotation about the line rather than
+   part of the request. It must stay legible: a marker nobody reads is the same
+   as no marker. */
+.wire .hderived { color: var(--quiet); font-style: italic; }
 
 .prov {
   width: 100%;
