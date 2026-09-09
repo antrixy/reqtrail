@@ -15,10 +15,25 @@ const MASK = "\u2022\u2022\u2022\u2022";
 // Showing `\u001b[31m` rather than emitting it is also the more accurate
 // rendering: it is what the header value contains.
 
+// A DERIVED HEADER IS MARKED. `origin` was added to the projection in 0.3.0 so
+// the document would not assert that the user wrote `Host`; shipping it as a
+// `--json`-only field left this display making exactly that assertion, which is
+// the thing the field exists to prevent.
+//
+// The marker is APPENDED, not aligned. A column computed from the longest
+// header would be pushed off the screen by one long value — and header values
+// come from a file that may be hostile, which is the same reasoning that put
+// `esc` on every value here rather than only on the ones that came through a
+// refusal.
+//
+// Marking the DERIVED one rather than the workspace ones is deliberate: the
+// annotation should scale with what reqtrail adds, not with what the user
+// wrote, and today that is one header out of however many.
 export function renderProjection(result) {
   const lines = [`${result.projection.method} ${esc(result.projection.url)}`];
   for (const h of result.projection.headers) {
-    lines.push(`${esc(h.name)}: ${esc(h.value)}`);
+    const line = `${esc(h.name)}: ${esc(h.value)}`;
+    lines.push(h.origin === "derived" ? `${line}  (derived)` : line);
   }
   return lines.join("\n");
 }
