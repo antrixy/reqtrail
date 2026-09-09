@@ -11,8 +11,9 @@ import { resolveWorkspace, __prepareForTest } from "../src/core/prepare.js";
 import { project } from "../src/core/exact.js";
 import { parseWorkspace, selectRequest } from "../src/core/parse.js";
 import { Refusal } from "../src/core/errors.js";
+import { renderResolve } from "../src/cli/render.js";
 
-const EXPECTED = 190;
+const EXPECTED = 193;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -442,6 +443,25 @@ check("header order preserved", () => {
 // construction path and would compute it with no secret ranges attached.
 
 const host = (r) => r.projection.headers.filter((h) => h.origin === "derived");
+
+check("the DISPLAY marks a derived header, not only --json", () => {
+  const r = go(one("https://a.example/p"));
+  const text = renderResolve(r);
+  return text.includes("Host: a.example  (derived)");
+});
+check("a workspace header is NOT marked derived", () => {
+  const r = go(ws({ requests: [{ id: "r", method: "GET", url: "https://a.example/p",
+    headers: [{ name: "X-A", value: "1" }] }] }));
+  return renderResolve(r).includes("X-A: 1\n") &&
+    !/X-A: 1 .*derived/.test(renderResolve(r));
+});
+// The marker is APPENDED so a long value cannot push it off the line. A mutant
+// aligning it to a computed column passes the two checks above and fails this.
+check("the marker survives a header value long enough to break a column", () => {
+  const r = go(ws({ requests: [{ id: "r", method: "GET", url: "https://a.example/p",
+    headers: [{ name: "X-Long", value: "v".repeat(400) }] }] }));
+  return renderResolve(r).includes("Host: a.example  (derived)");
+});
 
 check("Host is derived, and there is exactly one derived header", () => {
   const r = go(one("https://a.example/p"));
