@@ -21,7 +21,7 @@ The same file ships inside the package at `examples/example.reqtrail.json`.
 ```
 $ API_TOKEN=... reqtrail resolve example.reqtrail.json --request get-user
 GET https://api.example.com/users/42?q=a%20b
-Host: api.example.com
+Host: api.example.com  (derived)
 Authorization: Bearer ••••
 X-Tag: alpha
 X-Tag: beta
@@ -37,7 +37,8 @@ Substitutions
 The arrow is the point. `{{query}}` held `a b`; what will go out is `a%20b`.
 A tool that showed you `a b` would be showing you something that is not sent.
 
-**`Host` is not in the file.** reqtrail derives it from the URL and shows it,
+**`Host` is not in the file**, which is what `(derived)` marks. reqtrail
+derives it from the URL and shows it,
 because it goes on the wire and a request without it is answered with 400. It
 carries `"origin": "derived"` in `--json`, where every other header carries
 `"origin": "workspace"` — so a consumer can tell what you wrote from what
