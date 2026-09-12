@@ -13,7 +13,7 @@ import { parseWorkspace, selectRequest } from "../src/core/parse.js";
 import { Refusal } from "../src/core/errors.js";
 import { renderResolve } from "../src/cli/render.js";
 
-const EXPECTED = 193;
+const EXPECTED = 194;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -444,6 +444,29 @@ check("header order preserved", () => {
 
 const host = (r) => r.projection.headers.filter((h) => h.origin === "derived");
 
+// THE RULE THAT COST FIVE INSTANCES BEFORE ANYONE WROTE IT DOWN.
+//
+// `src/ui/main.jsx` said "this release ... does not send them" and README.md
+// said it in four more places, all true when written and all false the moment
+// `run` shipped. Nothing caught any of them, because no check reads prose.
+//
+// A sentence naming a version, or asserting what the current release cannot do,
+// is a value-pin on a surface no check reads. State the PROPERTY instead: `resolve`
+// sends nothing because that is what the verb means, not because of a version.
+//
+// This check is deliberately crude. It cannot tell a true version claim from a
+// stale one, so it forbids the SHAPE — which is the only thing a grep can know
+// and the only thing that has ever gone wrong here.
+check("no user-visible prose pins a release", () => {
+  const banned = /this release|current release|arrives in \d|ships in \d/i;
+  for (const f of ["README.md", "src/ui/main.jsx", "src/cli/main.js"]) {
+    const src = f.endsWith(".md") ? readSource(f) : stripComments(readSource(f));
+    const hit = src.split("\n").find((l) => banned.test(l));
+    if (hit) throw new Error(`${f} pins a release: ${hit.trim().slice(0, 60)}`);
+  }
+  return true;
+});
+
 check("the DISPLAY marks a derived header, not only --json", () => {
   const r = go(one("https://a.example/p"));
   const text = renderResolve(r);
@@ -748,13 +771,15 @@ check("the README's workspace example resolves", () => {
 // So the property is pinned instead: the README claims no transport, without
 // naming a version, and the core has no transport for it to be wrong about.
 // When `run` lands in 0.3.0 this fails loudly and correctly.
-check("the README's no-transport claim is version-agnostic", () => {
-  if (!readme.includes("This release sends nothing")) {
-    throw new Error("the README no longer claims this release sends nothing");
-  }
-  const pinned = readme.match(/\b\d+\.\d+\.\d+ (sends nothing|has no transport)/);
-  if (pinned) {
-    throw new Error(`the claim is pinned to a version: "${pinned[0]}"`);
+// SUPERSEDED 2026-09-08. It required the README to contain the literal
+// "This release sends nothing" — a check enforcing the very value-pin that went
+// stale the moment `run` shipped. A GUARD THAT PINS THE WRONG SENTENCE IS WORSE
+// THAN NO GUARD: it blocks its own correction. Same shape as the `0.1.0 sends
+// nothing` pin 9d recorded. Replaced by "no user-visible prose pins a release",
+// which forbids the SHAPE rather than requiring a sentence.
+check("the README states what `resolve` does, not what a release does", () => {
+  if (!/`resolve` sends nothing, ever/.test(readme)) {
+    throw new Error("the README no longer states the property");
   }
   return true;
 });
