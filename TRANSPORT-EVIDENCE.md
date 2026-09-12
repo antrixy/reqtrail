@@ -12,14 +12,14 @@ sha-pinned from codeload; archive sha256
 Verified at `1057921ba518ea624eeb7839ae17c1f42ae9989f`; archive sha256
 `649fe7ded3fe4954a31b739bed9fcec82851f5ea8aa5d36a576d80f70440e38b`.
 
-    refusals    40/40 carry a literal message
+    refusals    41/41 carry a literal message
     selftest    196/196
     leak-audit  0 of 28 fixtures leak, 0 disclosure paths, 0 escape paths
     ui          27/27
     parity      7/7 byte-identical
     server      51/51
     server-slow 2/2
-    wire        20/20
+    wire        24/24
     sitting A   14/16, real Chromium 141
 
 ## The collapse DELETED headers. It did not reorder them
@@ -132,7 +132,7 @@ maintained, so an unanticipated code is still safe. `e.message`, `e.hostname`,
 | T3 | the adapter builds no request content | **right** — `wireHeaders` is a flattener; a selftest check pins no adapter imports the transport |
 | T4 | the fixed rig surfaces a hidden disagreement | **right, narrowly** — on the EXISTING fixture it surfaced only the `Host` change; the hidden disagreements needed new fixtures to exist |
 | T5 | `leak-audit` needs new fixtures | **right, wrong mechanism** — not response bodies. A secret can reach `Host` and a transport error. `test/wire.mjs` covers both; **the 28 leak-audit fixtures still cover neither** |
-| T6 | the suite grows 12–25 checks | **right** — 171 → 196, and `wire` 0 → 20 |
+| T6 | the suite grows 12–25 checks | **right** — 171 → 196, and `wire` 0 → 24 |
 | T7 | exit code 3 becomes reachable | **right** — `reqtrail run` against an unresolvable host exits 3 |
 | T8 | the first transport reads ambient state or hardcodes a pinnable value | **right, and it was `Host`** — the value a transport would have hardcoded is exactly the one that had to move into the core |
 
@@ -209,6 +209,38 @@ forbids a literal digit there.
 
 **Found only because the check was tested against a broken input.** Green would
 have shipped two guards.
+
+## `https` exited 3, and 3 was the wrong code
+
+Found while verifying the release notes against the tree rather than re-reading
+them, hours after the release was called complete.
+
+    $ reqtrail run https-workspace.json
+    not sent: transport.protocol
+    exit=3
+
+**Code 3 is documented as "send attempted and failed; nothing to edit; may be
+transient". All three halves were false.** `send` throws on the protocol check
+BEFORE opening a socket, so nothing was attempted; the fix is one character in
+the workspace file, so there is something to edit; and it is not transient.
+
+**Every product example in the README uses HTTPS**, so this was the first `run`
+a new user would attempt, answered with an exit code whose documentation told
+them there was nothing they could do.
+
+**Two correct-looking pieces composed into a defect.** `send` refusing a
+non-`http:` protocol is right. `run` mapping "did not send" to exit 3 is right
+for a transport failure. Neither review caught it because neither is wrong
+alone — the same shape as the `Host` case, where the core building no `Host` and
+the array form adding none were each correct.
+
+`run` now refuses through the core's refusal path — `transport.unsupported`,
+path `url`, exit 1. **`resolve` is unchanged and still shows `https://`
+requests**: the scheme is legal to display and not yet legal to send. `send`
+keeps its own guard, because it is exported and `run` is not the only way in;
+`test/wire.mjs` exercises it directly now that nothing reaches it through `run`.
+
+Four rows added, and they are regression rows rather than new coverage.
 
 ## Carried, and not closed
 

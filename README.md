@@ -178,6 +178,9 @@ is a perfectly valid hostname to a DNS resolver — so reqtrail does.
 | `2` | Usage error | Fix the command |
 | `3` | Send attempted and failed | Nothing to edit; may be transient |
 
+**Code 3 means bytes were attempted.** An `https://` URL is code 1, not 3:
+`resolve` will show it, `run` refuses it, and the fix is in your file.
+
 **Code 3 is `run` only.** `resolve` never sends, so nothing can fail in transit;
 an unresolved reference is code 1 under both verbs, because nothing was sent and
 the instruction is still *edit something*. **A non-2xx response is code 0**: the
