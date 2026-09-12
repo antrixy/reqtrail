@@ -128,6 +128,28 @@ check("a failed send reports a CODE", () =>
 check("a failed send does not leak the hostname node put in its message", () =>
   !JSON.stringify(bad).includes("secret-host.invalid"));
 
+// `https` IS A REFUSAL UNDER `run`, NOT A TRANSPORT FAILURE. Regression rows:
+// this shipped as exit 3 — "send attempted and failed, nothing to edit, may be
+// transient" — when nothing was attempted and the fix is one character.
+const httpsWs = JSON.stringify({ version: 1, variables: {},
+  requests: [{ id: "r", name: "n", method: "GET", url: "https://example.com/p", headers: [] }] });
+let refused = null;
+try { await run(httpsWs, { env: ENV }); } catch (e) { refused = e; }
+check("run REFUSES https rather than reporting a transport failure", () =>
+  refused !== null && refused.detail?.code === "transport.unsupported");
+check("the https refusal points at the url, so there is something to edit", () =>
+  refused?.detail?.path === "url");
+check("resolve is UNAFFECTED — https is legal to inspect", () => {
+  const { view } = __prepareForTest(httpsWs, { env: ENV });
+  return view.resolvable === true && view.projection.url === "https://example.com/p";
+});
+// `send`'s own guard is kept and is no longer reachable through `run`. It is
+// exported, so it is still a boundary — exercised directly here.
+let direct = null;
+try { await send(__prepareForTest(httpsWs, { env: ENV }).exact); } catch (e) { direct = e; }
+check("send still guards the protocol when called directly", () =>
+  direct?.code === "transport.protocol");
+
 // W-REAL. The row the raw receiver structurally cannot answer.
 const srv = http.createServer((q, s) => s.end("ok"));
 await new Promise((res) => srv.listen(0, "127.0.0.1", res));
