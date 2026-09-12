@@ -149,8 +149,9 @@ function RefusalView({ error }) {
         <dt>Where</dt><dd className="where">{error.path}</dd>
         <dt>Code</dt><dd className="code">{error.code}</dd>
       </dl>
-      <p className="quiet">Nothing is sent by this release, and this request
-        could not be prepared at all.</p>
+      {/* Property, not version — see the note at the standing claim above. */}
+      <p className="quiet">`resolve` sends nothing, and this request could not
+        be prepared at all.</p>
     </section>
   );
 }
