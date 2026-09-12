@@ -24,7 +24,16 @@ import { resolveWorkspace, run } from "../core/prepare.js";
 import { Refusal, StartupFailure } from "../core/errors.js";
 import { renderResolve, renderResponse, renderDiagnostics, renderRefusal } from "./render.js";
 
-export const VERSION = "0.2.0";
+// ONE SOURCE OF TRUTH, ENFORCED. This constant and `package.json`'s `version`
+// are two places holding the same fact, which is how v0.2.0 shipped a crash
+// message telling users to report a bug in reqtrail 0.1.0 — this string was not
+// bumped and nothing noticed, because nothing compared them.
+//
+// Reading package.json at runtime was the other option and was not taken: it
+// resolves differently under a bundler than under node, and a version string
+// that is right in one and wrong in the other is worse than a duplicate that a
+// check pins. `test/selftest.mjs` fails if these two disagree.
+export const VERSION = "0.3.0";
 
 const USAGE = `reqtrail ${VERSION} — see the request before it is sent
 
