@@ -1,6 +1,6 @@
 {
   "name": "reqtrail",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "See the request before it is sent: a local, Git-friendly HTTP request inspector with per-value provenance.",
   "license": "MIT",
   "author": "Maverick Yadav",
