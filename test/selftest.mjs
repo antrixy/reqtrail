@@ -13,7 +13,7 @@ import { parseWorkspace, selectRequest } from "../src/core/parse.js";
 import { Refusal } from "../src/core/errors.js";
 import { renderResolve } from "../src/cli/render.js";
 
-const EXPECTED = 195;
+const EXPECTED = 196;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -867,6 +867,37 @@ check("BOUNDARY-EVIDENCE.md keeps the count v0.2.0 SHIPPED", () => {
   const wrong = quoted.filter((n) => n !== 171 && n !== 159);
   if (wrong.length) {
     throw new Error(`BOUNDARY-EVIDENCE.md says ${wrong.join(", ")}; v0.2.0 shipped 171 and is frozen`);
+  }
+  return true;
+});
+
+// THE DRIFT GUARD, RE-POINTED 2026-09-08 at the release being prepared.
+// It was unpointed between freezing the BOUNDARY-EVIDENCE.md guard and this
+// document existing, and during that window the suite moved 184 -> 196 with no
+// live document tracking it.
+//
+// AT 0.4.0 THIS GUARD MUST MOVE AGAIN. When 0.3.0 is tagged and published,
+// TRANSPORT-EVIDENCE.md becomes a frozen release record and this check starts
+// demanding that a published document be edited to a count it never had — which
+// is what BOUNDARY-EVIDENCE.md's version of this check did this morning.
+// Freeze it at whatever 0.3.0 ships, and re-point this at 0.4.0's document.
+// **The transition is a release action, not something a red check should
+// discover.**
+check("TRANSPORT-EVIDENCE.md quotes this suite's actual count", () => {
+  const doc = readSource("TRANSPORT-EVIDENCE.md");
+  const quoted = [...doc.matchAll(/selftest\s+(\d+)\/(\d+)/g)].map((m) => Number(m[1]));
+  if (quoted.length === 0) {
+    throw new Error("TRANSPORT-EVIDENCE.md quotes no selftest count");
+  }
+  // Compared against EXPECTED, not against `passed`. `passed` is the RUNNING
+  // count and this check sits mid-file, so it would compare the document
+  // against however many checks happen to precede it — a number that changes
+  // when a check is inserted above. EXPECTED is the declared total, and the
+  // count tripwire at the end of this file already binds EXPECTED to what
+  // actually ran. One chain: document -> EXPECTED -> actual.
+  const wrong = quoted.filter((n) => n !== EXPECTED);
+  if (wrong.length) {
+    throw new Error(`TRANSPORT-EVIDENCE.md says ${wrong.join(", ")}; the suite runs ${EXPECTED}`);
   }
   return true;
 });
