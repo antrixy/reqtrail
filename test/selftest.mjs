@@ -13,7 +13,7 @@ import { parseWorkspace, selectRequest } from "../src/core/parse.js";
 import { Refusal } from "../src/core/errors.js";
 import { renderResolve } from "../src/cli/render.js";
 
-const EXPECTED = 194;
+const EXPECTED = 195;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -457,6 +457,21 @@ const host = (r) => r.projection.headers.filter((h) => h.origin === "derived");
 // This check is deliberately crude. It cannot tell a true version claim from a
 // stale one, so it forbids the SHAPE — which is the only thing a grep can know
 // and the only thing that has ever gone wrong here.
+// NOT a second version-agreement check — ":881 the version in package.json is
+// the version the CLI reports" already covers that, end to end through the real
+// binary, which is stronger than comparing two constants. Added here after
+// writing a duplicate and deleting it: 9c, duplication is future disagreement.
+//
+// What :881 does NOT cover is the CRASH message, which is a different string on
+// a different path and is exactly what went wrong in v0.2.0 — it named 0.1.0
+// because it held its own copy. This pins that it interpolates rather than
+// holding one.
+check("the crash message interpolates the version, never a literal", () => {
+  const src = stripComments(readSource("bin/reqtrail.js"));
+  return /bug in reqtrail \$\{VERSION\}/.test(src) &&
+    !/bug in reqtrail \d/.test(src);
+});
+
 check("no user-visible prose pins a release", () => {
   const banned = /this release|current release|arrives in \d|ships in \d/i;
   for (const f of ["README.md", "src/ui/main.jsx", "src/cli/main.js"]) {
