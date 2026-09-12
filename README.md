@@ -4,10 +4,11 @@
 
 `reqtrail resolve` reads a workspace file and shows you the request it would
 hand to the transport — method, URL, headers — together with where every
-substituted value came from and what happened to it on the way.
+substituted value came from and what happened to it on the way. `reqtrail run`
+shows you the same thing and then sends it.
 
-**This release sends nothing.** There is no transport in it. It is the
-inspector; `run` arrives in 0.3.0.
+**`resolve` sends nothing, ever.** That is not a limit of a version; it is what
+the verb means. Nothing leaves your machine until you type `run`.
 
 Save the workspace file from [The workspace file](#the-workspace-file) below as
 `example.reqtrail.json`, then:
@@ -46,10 +47,12 @@ reqtrail added, and the display is not quietly claiming you wrote it. A
 workspace that sets `Host` itself is refused rather than merged: two would be a
 request-smuggling shape.
 
-`reqtrail ui example.reqtrail.json` opens the same view in a browser, read only,
-with no send button.
+`reqtrail ui example.reqtrail.json` opens the same view in a browser. **It is
+read only and has no send button** — sending is the CLI's job, and a page in a
+browser that can make your machine emit authenticated requests is a larger
+security question than this tool has answered.
 
-## The claim, and how far this release can back it
+## The claim, and how far it is backed
 
 > reqtrail shows the effective request it hands to the transport — method, URL
 > and headers — and where every substituted value came from, before it sends it.
@@ -66,20 +69,29 @@ an ordered array, the transport supplies no `Host`, and reqtrail derives and
 displays its own — which leaves `Connection` as the only header that reaches a
 receiver without appearing above.
 
-**Read this part carefully, because it is the honest limit of this release.**
+**Read this part carefully, because it is where the claim is actually earned.**
 
-The second sentence of the claim is true, and **you cannot reproduce it with
-this release.** The comparison against a receiver was run once, before any of
-this code existed, in `slice0/` — a frozen harness that built a request, sent it
-through `node:http`, and compared it against raw bytes captured off a socket.
-Nine sendable cases matched exactly; seven refusals reached the wire with zero
-bytes. The predictions were written down first, and two of them were wrong. All
-of it is in `SLICE-0-PREREGISTRATION.md` and `SLICE-0-EVIDENCE.md`, and you can
-run the harness yourself.
+The second sentence used to be unreproducible. It is not any more, and the
+change is worth stating plainly rather than quietly.
 
-**This release has no transport and no receiver, so what it shows you is the
-request that *will be* sent — verified by slice 0, not by anything this release
-does on your machine.** When `run` ships in 0.3.0, that changes.
+A wire check ([`test/wire.mjs`](https://github.com/antrixy/reqtrail/blob/main/test/wire.mjs))
+runs on every `npm test`. It builds a request through the same
+core the CLI uses, sends it through the real transport, and compares what a
+raw-socket receiver recorded — method, target, and the header block as an
+ordered sequence of name/value pairs, casing and repeats preserved — against the
+request the core built. **Not a claim about code: a comparison of captured
+bytes.** It then sends the same request at a real HTTP/1.1 server, because a raw
+receiver accepts anything written at it and is not an oracle for whether a real
+server would.
+
+`slice0/` is still there, and it is still the reason any of this was attempted.
+It ran once, before any of this code existed: nine sendable cases matched
+exactly, seven refusals reached the wire with zero bytes, the predictions were
+written down first, and two of them were wrong. `SLICE-0-PREREGISTRATION.md` and
+`SLICE-0-EVIDENCE.md` record it and you can run the harness yourself.
+
+**What reqtrail shows you is checked against what a receiver recorded, on your
+machine, every time the suite runs.**
 
 ## The workspace file
 
@@ -166,12 +178,17 @@ is a perfectly valid hostname to a DNS resolver — so reqtrail does.
 | `2` | Usage error | Fix the command |
 | `3` | Send attempted and failed | Nothing to edit; may be transient |
 
-**Code 3 cannot occur in this release** — nothing is sent, so nothing can fail in
-transit. It is listed because **exit codes are interface from this release
-onward**: a code may be added, but an existing code's meaning will not change.
-**Test `!= 0` rather than equality.**
+**Code 3 is `run` only.** `resolve` never sends, so nothing can fail in transit;
+an unresolved reference is code 1 under both verbs, because nothing was sent and
+the instruction is still *edit something*. **A non-2xx response is code 0**: the
+send worked and the server answered, and whether you like the answer is your
+business, not the exit code's.
 
-`resolve` exits 1 when it cannot fully resolve **and still prints everything**.
+**Exit codes are interface.** A code may be added, but an existing code's
+meaning will not change. **Test `!= 0` rather than equality.**
+
+`resolve` and `run` both exit 1 when a reference does not resolve, **and still
+print everything**.
 Printing and the exit code are separate channels: you get the diagnosis, your
 script gets *not sendable*. Payload on stdout, diagnostics on stderr, always —
 so `--json` stays parseable.
