@@ -398,6 +398,25 @@ export async function run(text, options) {
   const { exact, view } = prepareFromWorkspace(text, options);
   const document = { schemaVersion: SCHEMA_VERSION, ...view };
   if (!view.resolvable) return { ...document, sent: false };
+
+  // AN `https://` URL IS A REFUSAL, NOT A TRANSPORT FAILURE.
+  //
+  // It was a transport failure until 2026-09-08, and the code it produced was
+  // EXIT 3 — documented as "send attempted and failed; nothing to edit; may be
+  // transient". All three halves were wrong: `send` throws on the protocol
+  // check BEFORE opening a socket, so nothing was attempted; the fix is one
+  // character in the workspace file, so there is something to edit; and it is
+  // not transient. **Every product example in the README uses HTTPS**, so the
+  // first `run` a new user attempts hit it.
+  //
+  // It belongs HERE and not in `prepareRequest`, because `resolve` inspecting
+  // an `https://` URL is correct and unchanged. The scheme is legal to show and
+  // not yet legal to send. `send` keeps its own guard — it is exported and this
+  // path is not the only way in — but nothing reaches it through `run`.
+  if (new URL(exact.url.text).protocol !== "http:") {
+    refuse("transport.unsupported", "url",
+      "reqtrail cannot send https yet; it can show the request but not send it");
+  }
   try {
     return { ...document, sent: true, response: await send(exact) };
   } catch (e) {
