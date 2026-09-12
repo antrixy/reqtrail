@@ -44,7 +44,8 @@ const USAGE = `reqtrail ${VERSION} — see the request before it is sent
   reqtrail --help
 
 resolve shows the request. run shows it and then sends it, over plain HTTP
-only; an https:// URL is refused rather than downgraded.
+only. resolve will show an https:// request; run refuses it (exit 1), because
+the fix is in your file, not in the network.
 
 Exit codes: 0 resolved, or sent and answered · 1 refused or unresolved
 · 2 usage · 3 send attempted and failed.
