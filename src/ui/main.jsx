@@ -220,8 +220,21 @@ function App() {
       <header>
         <h1>reqtrail</h1>
         <p className="file">{session.file}</p>
+        {/* A STANDING CLAIM ABOUT THE VIEW, NOT ABOUT THE RELEASE.
+            This said "this release ... does not send them" until 2026-09-08,
+            which was true when written and false the moment `run` shipped.
+            Nothing caught it: no check reads this string, and the browser
+            sitting that surfaced it only PRINTS the page text.
+
+            Third instance of the family — the npm README's version-pinned
+            no-transport claims, and the `0.1.0 sends nothing` value-pin that
+            would have blocked its own correction. The repair is not a better
+            sentence about 0.3.0; it is a sentence with NO VERSION IN IT.
+            `reqtrail ui` is read-only by design, so this stays true whatever
+            ships next. */}
         <p className="standing">
-          This release resolves requests and shows them. It does not send them.
+          This view shows requests. It does not send them — run{" "}
+          <code>reqtrail run</code> to send.
         </p>
       </header>
 
