@@ -871,33 +871,39 @@ check("BOUNDARY-EVIDENCE.md keeps the count v0.2.0 SHIPPED", () => {
   return true;
 });
 
-// THE DRIFT GUARD, RE-POINTED 2026-09-08 at the release being prepared.
-// It was unpointed between freezing the BOUNDARY-EVIDENCE.md guard and this
-// document existing, and during that window the suite moved 184 -> 196 with no
-// live document tracking it.
+// FROZEN 2026-09-08, the same day it was pointed here, because v0.3.0 was
+// tagged and published in between.
 //
-// AT 0.4.0 THIS GUARD MUST MOVE AGAIN. When 0.3.0 is tagged and published,
-// TRANSPORT-EVIDENCE.md becomes a frozen release record and this check starts
-// demanding that a published document be edited to a count it never had — which
-// is what BOUNDARY-EVIDENCE.md's version of this check did this morning.
-// Freeze it at whatever 0.3.0 ships, and re-point this at 0.4.0's document.
-// **The transition is a release action, not something a red check should
-// discover.**
-check("TRANSPORT-EVIDENCE.md quotes this suite's actual count", () => {
+// It was a DRIFT guard — "quotes this suite's actual count", compared against
+// EXPECTED. Correct while 0.3.0 was being prepared and wrong the moment it
+// shipped: the next check anyone adds moves EXPECTED, and this would demand
+// that a PUBLISHED release record be edited to a count that release never had.
+// That is exactly what BOUNDARY-EVIDENCE.md's version of this check did on the
+// morning of the same day.
+//
+// **THE TRANSITION WAS DONE AS A RELEASE ACTION, NOT DISCOVERED BY A RED
+// CHECK.** That is the whole point of the note that used to sit here.
+//
+// THIRD INSTANCE OF THE CLASS: EVIDENCE-0.1.0.md, BOUNDARY-EVIDENCE.md, now
+// this. Every release turns the previous release's evidence document frozen and
+// leaves a drift guard aimed at it. **Freezing the outgoing guard and
+// re-pointing the drift guard belongs in the release procedure**, beside
+// bumping VERSION and verifying the tag resolves to the verified sha — not in a
+// comment the next person has to happen to read.
+//
+// THE DRIFT GUARD IS NOW UNPOINTED, stated rather than hidden: 0.4.0's evidence
+// document does not exist, so the guard has no subject — the reasoning that
+// retired P9. Until it is written, NOTHING checks that a live document tracks
+// the suite count.
+check("TRANSPORT-EVIDENCE.md keeps the count v0.3.0 SHIPPED", () => {
   const doc = readSource("TRANSPORT-EVIDENCE.md");
   const quoted = [...doc.matchAll(/selftest\s+(\d+)\/(\d+)/g)].map((m) => Number(m[1]));
   if (quoted.length === 0) {
     throw new Error("TRANSPORT-EVIDENCE.md quotes no selftest count");
   }
-  // Compared against EXPECTED, not against `passed`. `passed` is the RUNNING
-  // count and this check sits mid-file, so it would compare the document
-  // against however many checks happen to precede it — a number that changes
-  // when a check is inserted above. EXPECTED is the declared total, and the
-  // count tripwire at the end of this file already binds EXPECTED to what
-  // actually ran. One chain: document -> EXPECTED -> actual.
-  const wrong = quoted.filter((n) => n !== EXPECTED);
+  const wrong = quoted.filter((n) => n !== 196);
   if (wrong.length) {
-    throw new Error(`TRANSPORT-EVIDENCE.md says ${wrong.join(", ")}; the suite runs ${EXPECTED}`);
+    throw new Error(`TRANSPORT-EVIDENCE.md says ${wrong.join(", ")}; v0.3.0 shipped 196 and is published`);
   }
   return true;
 });
