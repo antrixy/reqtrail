@@ -13,7 +13,7 @@ import { parseWorkspace, selectRequest } from "../src/core/parse.js";
 import { Refusal } from "../src/core/errors.js";
 import { renderResolve } from "../src/cli/render.js";
 
-const EXPECTED = 196;
+const EXPECTED = 199;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -470,6 +470,29 @@ check("the crash message interpolates the version, never a literal", () => {
   const src = stripComments(readSource("bin/reqtrail.js"));
   return /bug in reqtrail \$\{VERSION\}/.test(src) &&
     !/bug in reqtrail \d/.test(src);
+});
+
+// RELEASE.md IS A CHECKLIST, AND A CHECKLIST NOBODY CAN VERIFY IS A WISH.
+// These pin the parts of it that are facts about this repo, so the document
+// cannot drift away from the thing it describes — which is how every stale
+// claim found on 2026-09-08 got there.
+check("RELEASE.md names both files that hold the version", () => {
+  const doc = readSource("RELEASE.md");
+  return doc.includes("package.json") && doc.includes("src/cli/main.js");
+});
+check("RELEASE.md's version-bump step names files that really hold it", () => {
+  const v = JSON.parse(readSource("package.json")).version;
+  if (!readSource("src/cli/main.js").includes(`"${v}"`)) {
+    throw new Error(`src/cli/main.js does not contain ${v}`);
+  }
+  return true;
+});
+// The tag-verification step tells you to use raw.githubusercontent and NOT
+// codeload, because codeload serves cached tag tarballs. That sentence is the
+// one that ended three rounds of guessing; pin that it survives edits.
+check("RELEASE.md still warns that codeload caches tag tarballs", () => {
+  const doc = readSource("RELEASE.md");
+  return /raw\.githubusercontent\.com/.test(doc) && /codeload/.test(doc);
 });
 
 check("no user-visible prose pins a release", () => {
