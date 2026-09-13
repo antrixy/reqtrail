@@ -88,6 +88,34 @@ condition 0.2.0 already lives under.
 3. Exit code 3 and its documentation last, because its shape depends on what
    the transport actually does.
 
+## 3b. ADDENDUM — how §3's order of work was actually executed, 2026-09-08
+
+**Written after the release, appended rather than edited into §3, so what was
+pre-registered stays legible as what was pre-registered.**
+
+§3 item 1 says fix `slice0/run.mjs` first. **It was executed as an IN-PLACE
+repair**, which pulled against `slice0/README.md` declaring the harness frozen
+and against `SLICE-0-EVIDENCE.md` reporting its output.
+
+**Allowed because no verdict moved.** P4 and P8 were falsified on 2026-09-04 and
+are still falsified; no assertion was edited; the one observed detail that
+changed — the runtime adds one header, not two — is corrected in the evidence
+rather than left standing. **Had a prediction flipped, that would have been the
+study rather than a repair**, and the answer would have been a separate live
+harness.
+
+`slice0/adversarial.mjs` carried the same collapse and was repaired too, with
+**output verified byte-identical before and after**.
+
+**The bar for the next edit to `slice0/` is stated in `slice0/README.md`**, and
+the ruling is in `decisions.md`. Neither is restated here.
+
+**§4 IS UNTOUCHED.** T1 is falsified as written and is kept with its original
+wording — it predicted `run` would touch at most two files in `core/`, and
+`Host` alone touched three before `run` existed. §4 was frozen before `Host` was
+known to be reqtrail's problem, so T1 says nothing about it. **That is what a
+frozen prediction is for.**
+
 ## 4. PRE-REGISTERED PREDICTIONS — frozen
 
 | # | Prediction | Confidence | Falsified by |
