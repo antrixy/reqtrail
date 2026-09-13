@@ -13,7 +13,7 @@ Verified at `1057921ba518ea624eeb7839ae17c1f42ae9989f`; archive sha256
 `649fe7ded3fe4954a31b739bed9fcec82851f5ea8aa5d36a576d80f70440e38b`.
 
     refusals    41/41 carry a literal message
-    selftest    196/196
+    selftest    196/196   (199 after RELEASE.md landed; 196 is what v0.3.0 shipped)
     leak-audit  0 of 28 fixtures leak, 0 disclosure paths, 0 escape paths
     ui          27/27
     parity      7/7 byte-identical
