@@ -72,13 +72,23 @@ the **Tags** tab and is greyed out while a release is attached.
 the wrong commit. **A no-op delete and a successful one are indistinguishable
 unless you look between them** — that is the whole reason this is its own step.
 
-**11. Verify the tag resolves to the sha the suite was verified at.**
+**11. Resolve the tag, then verify the SHA. Two steps, two roles.**
 
-    curl -s "https://raw.githubusercontent.com/antrixy/reqtrail/vX.Y.Z/src/core/prepare.js" | md5sum
+LOOKUP — what does the tag point at right now? Use `raw.githubusercontent.com`
+with a cache-buster, because it resolves the ref server-side:
 
-Use `raw.githubusercontent.com`, not `codeload`. **`codeload` caches tag
-tarballs long enough to keep serving the old tree after the tag has moved**, so
-it will make a successful fix look like a failure.
+    curl -s "https://raw.githubusercontent.com/antrixy/reqtrail/vX.Y.Z/src/core/prepare.js?cb=$RANDOM" | md5sum
+
+VERIFICATION — is that tree the one the suite passed on? Codeload pinned to the
+**sha**, never to the tag ref:
+
+    curl -sL "https://codeload.github.com/antrixy/reqtrail/tar.gz/<sha>"
+
+**`codeload` caches TAG tarballs long enough to serve the old tree after the tag
+has moved** — on 2026-09-08 a corrected `v0.3.0` returned a byte-identical
+archive for over half an hour, so a successful fix looked like a failure. A
+sha-pinned archive is immutable, so its cache is harmless. **Never verify
+against a ref of any kind.**
 
 The publish workflow builds from `main`, so a wrong tag does not corrupt the
 artifact — **it does something worse**: npm gets correct code while the tag
