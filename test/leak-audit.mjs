@@ -21,10 +21,12 @@ import { join } from "node:path";
 import { resolveWorkspace } from "../src/core/prepare.js";
 import { Refusal } from "../src/core/errors.js";
 import { createUiServer, newToken } from "../src/server/server.js";
+import { spawn } from "node:child_process";
+import { TEST_CERT_PATH } from "./tls-receiver.mjs";
 
 // Fixture count tripwire: a fixture that silently stops running would turn this
 // instrument into one that reports "clean" for a path it no longer tests.
-const EXPECTED_FIXTURES = 28;
+const EXPECTED_FIXTURES = 31;
 
 // After the fix, this file is a regression test: it must exit non-zero while any
 // path leaks. Today it is expected to fail, and the failure IS the measurement.
@@ -41,6 +43,26 @@ const HOSTILE_C1 = "a\u007fb\u009fc";
 // refused at parse and none reached the renderer, so the escaping had no test
 // left. This one is accepted and must still be escaped on the way out.
 const HOSTILE_ACCEPTED = "a\u009fb\u0085c";
+// A hostname that CARRIES the marker and is still a legal host. `.invalid` is
+// reserved (RFC 2606), so a send to it cannot leave the machine: it fails in
+// the resolver, which is exactly the transport-error path this file could not
+// reach while every fixture used `resolve`.
+const SECRET_HOST = `${SECRET.toLowerCase()}.invalid`;
+// AN UNTRUSTED TLS SERVER, IN A CHILD PROCESS. It has to be a child: the
+// channels below run the binary with execFileSync, which blocks this event
+// loop, and a server living here could never accept the connection.
+const tlsServer = spawn(process.execPath, ["-e", `
+  const tls = require("node:tls"), fs = require("node:fs");
+  const [cert, key] = process.argv.slice(1);
+  const s = tls.createServer({ cert: fs.readFileSync(cert), key: fs.readFileSync(key) }, (x) => x.end());
+  s.on("tlsClientError", () => {});
+  s.listen(0, "127.0.0.1", () => console.log(s.address().port));
+`, TEST_CERT_PATH, TEST_CERT_PATH.replace("-cert.pem", "-key.pem")], { stdio: ["ignore", "pipe", "inherit"] });
+const TLS_PORT = await new Promise((res, rej) => {
+  const t = setTimeout(() => rej(new Error("tls child did not report a port")), 10000);
+  tlsServer.stdout.once("data", (d) => { clearTimeout(t); res(Number(String(d).trim())); });
+});
+
 const dir = mkdtempSync(join(tmpdir(), "reqtrail-leak-"));
 const bin = "bin/reqtrail.js";
 
@@ -92,6 +114,30 @@ const FIXTURES = [
   ["a variable carrying C1 into a header value", ws({ variables: { c: HOSTILE_ACCEPTED }, requests: [req({ headers: [{ name: "A", value: "{{c}}" }] })] }), {}, "hostile"],
   ["refusal carrying DEL and C1", ws({ requests: [req({ id: `d${HOSTILE_C1}` })] }), {}, "hostile"],
   ["success path with hostile variable value", ws({ variables: { v: HOSTILE }, requests: [req({ url: "https://a.example/?q={{v}}" })] }), {}, "hostile"],
+
+  // --- a secret in the derived Host header ------------------------------
+  // CARRIED OPEN SINCE 0.3.0. `Host` is not copied from the file, it is DERIVED
+  // from the URL, so a secret hostname reaches a header nobody wrote. The
+  // secret is legitimately in `exact` — the question is whether it also lands
+  // in a channel a user could paste.
+  ["host.derived / secret is the host",
+    ws({ requests: [req({ url: "https://{{$env.T}}/p" })] }),
+    { T: SECRET_HOST }, "secret"],
+
+  // --- transport errors, carried open since 0.3.0 -----------------------
+  // These two SEND. Every fixture above resolves, so nothing here could reach
+  // a transport error until `run` learned https. Node's TLS and DNS errors
+  // carry the hostname in `e.message` and the certificate in `e.cert`;
+  // `transportCode` copies `e.code` alone, and these rows are what proves it.
+  // Mode "run" skips the core and api channels: both resolve, and neither can
+  // produce a transport error.
+  ["transport.dns / secret hostname, send attempted",
+    ws({ requests: [req({ url: "https://{{$env.T}}/p" })] }),
+    { T: SECRET_HOST }, "secret", null, "run"],
+  ["transport.tls / untrusted certificate, secret in a header",
+    ws({ requests: [req({ url: `https://localhost:${TLS_PORT}/p`,
+      headers: [{ name: "Authorization", value: "Bearer {{$env.T}}" }] })] }),
+    { T: SECRET }, "secret", null, "run"],
 ];
 
 // --- matching ---------------------------------------------------------------
@@ -110,17 +156,21 @@ const carriesControl = (out) => CONTROL.test(out);
 
 // --- channels ---------------------------------------------------------------
 
-function channels(fixture, env, extraArg) {
+function channels(fixture, env, extraArg, mode) {
   const file = join(dir, "w.json");
   writeFileSync(file, typeof fixture === "string" ? fixture : JSON.stringify(fixture));
   const args = extraArg ? ["--request", extraArg] : [];
+  const verb = mode === "run" ? "run" : "resolve";
   const run = (extra) => {
     try {
-      const stdout = execFileSync(process.execPath, [bin, "resolve", file, ...args, ...extra],
+      const stdout = execFileSync(process.execPath, [bin, verb, file, ...args, ...extra],
         { env: { PATH: process.env.PATH, ...env }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
       return stdout;
     } catch (e) { return (e.stdout ?? "") + (e.stderr ?? ""); }
   };
+
+  // A send has no core or api channel: both of those resolve.
+  if (mode === "run") return { core: "", human: run([]), json: run(["--json"]), file };
 
   let core = "";
   try {
@@ -158,9 +208,9 @@ async function apiChannel(fixture, env, extraArg) {
 const findings = [];
 console.log("channel key: core / cli-human / cli-json / api      (dom: NOT REACHED)\n");
 
-for (const [name, fixture, env, kind, extraArg] of FIXTURES) {
-  const ch = channels(fixture, env, extraArg);
-  ch.api = await apiChannel(fixture, env, extraArg);
+for (const [name, fixture, env, kind, extraArg, mode] of FIXTURES) {
+  const ch = channels(fixture, env, extraArg, mode);
+  ch.api = mode === "run" ? "" : await apiChannel(fixture, env, extraArg);
 
   const hit = [];
   for (const [label, out] of Object.entries(ch)) {
@@ -182,6 +232,8 @@ const controlPaths = findings.filter((f) => f.hit.some((h) => h.endsWith("CONTRO
 console.log(`  secret disclosure:      ${secretPaths.length} paths`);
 console.log(`  terminal escape:        ${controlPaths.length} paths`);
 console.log(`  DOM channel:            measured in sitting A as F6, not here`);
+
+tlsServer.kill();
 
 if (FIXTURES.length !== EXPECTED_FIXTURES) {
   console.error(`\n  FAIL count tripwire: ${FIXTURES.length} fixtures, expected ${EXPECTED_FIXTURES}`);
