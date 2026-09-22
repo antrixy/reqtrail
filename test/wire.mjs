@@ -145,8 +145,18 @@ check("resolve is UNAFFECTED — https is legal to inspect", () => {
 });
 // `send`'s own guard is kept and is no longer reachable through `run`. It is
 // exported, so it is still a boundary — exercised directly here.
+//
+// MOVED OFF `https:` 2026-09-22, BEFORE THE TRANSPORT LEARNED HTTPS
+// (HTTPS-PREREGISTRATION increment 3). Once `send` speaks `https:`, this row
+// would have gone out to example.com over the network. The property is
+// unchanged: a scheme the transport cannot speak is refused, never downgraded.
+// The core refuses every scheme except `http:` and `https:` (`url.scheme`), so
+// no workspace can build this request. The exact request is written by hand,
+// which is the only way anything reaches the guard now.
 let direct = null;
-try { await send(__prepareForTest(httpsWs, { env: ENV }).exact); } catch (e) { direct = e; }
+try {
+  await send({ method: "GET", url: { text: "ftp://example.com/p" }, headers: [] });
+} catch (e) { direct = e; }
 check("send still guards the protocol when called directly", () =>
   direct?.code === "transport.protocol");
 
