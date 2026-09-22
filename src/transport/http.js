@@ -19,6 +19,7 @@
 // error, and node's own header errors name the header but not its value.
 
 import http from "node:http";
+import https from "node:https";
 
 // Flat `[name, value, name, value, ...]`. Measured 2026-09-08 against the raw
 // receiver: node:http writes a flat array in the given order and preserves
@@ -52,26 +53,33 @@ export function wireTarget(exact) {
   };
 }
 
-// The send. `node:https` is deliberately absent — 0.4.0, per
-// TRANSPORT-PREREGISTRATION §5. It is one import away and every product example
-// uses HTTPS, so its absence is stated rather than left to be noticed:
-// a non-http: protocol is refused here rather than quietly downgraded.
+// The send. `http:` and `https:` only — anything else is refused here rather
+// than quietly downgraded. The core already refuses other schemes, but `send`
+// is exported and `run` is not the only way in.
+//
+// P-VERIFY (HTTPS-PREREGISTRATION §2, D2): `rejectUnauthorized: true` is passed
+// EXPLICITLY. Node's default reads NODE_TLS_REJECT_UNAUTHORIZED, so `=0` in the
+// environment would silently turn verification off; an explicit `true` wins
+// over it (measured 2026-09-22). This is transport configuration, not request
+// content — the header block rule above is untouched.
 export function send(exact) {
   const t = wireTarget(exact);
-  if (t.protocol !== "http:") {
+  const tls = t.protocol === "https:";
+  if (t.protocol !== "http:" && !tls) {
     const e = new Error(`transport.protocol:${t.protocol}`);
     e.code = "transport.protocol";
     throw e;
   }
   const headers = wireHeaders(exact);
   return new Promise((resolve, reject) => {
-    const req = http.request(
-      { hostname: t.hostname, port: t.port, path: t.path, method: exact.method, headers },
-      (res) => {
-        res.resume();
-        res.on("end", () => resolve({ status: res.statusCode }));
-      },
-    );
+    const onResponse = (res) => {
+      res.resume();
+      res.on("end", () => resolve({ status: res.statusCode }));
+    };
+    const options = { hostname: t.hostname, port: t.port, path: t.path, method: exact.method, headers };
+    const req = tls
+      ? https.request({ ...options, rejectUnauthorized: true }, onResponse)
+      : http.request(options, onResponse);
     // The error is passed through WITHOUT its message being rebuilt. node's
     // header errors name the header and not the value; re-wrapping is where a
     // value would get interpolated into a string, so nothing is re-wrapped.
