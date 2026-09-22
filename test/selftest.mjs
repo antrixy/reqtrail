@@ -3,6 +3,7 @@
 // the run, and so does a check that silently stops executing.
 
 import { execFileSync } from "node:child_process";
+import { X509Certificate } from "node:crypto";
 import { readFileSync, readdirSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -13,7 +14,7 @@ import { parseWorkspace, selectRequest } from "../src/core/parse.js";
 import { Refusal } from "../src/core/errors.js";
 import { renderResolve } from "../src/cli/render.js";
 
-const EXPECTED = 199;
+const EXPECTED = 200;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -1214,6 +1215,29 @@ check("every README link into this repo points at a file that exists", () => {
   }
   if (missing.length) {
     throw new Error(`README links to non-existent path(s): ${missing.join(", ")}`);
+  }
+  return true;
+});
+
+// THE TEST-ONLY TLS FIXTURE MUST NOT EXPIRE INTO A RED SUITE.
+// HTTPS-PREREGISTRATION D1, increment 2. `test/tls/TEST-ONLY-localhost-cert.pem`
+// is valid until 2126, which is long enough to be forgotten. An expired
+// certificate would fail every HTTPS row with a TLS error that reads like a
+// product defect. So this fails TEN YEARS before `notAfter`, while the reason
+// is still one line to find: regenerate with the command in test/tls/README.md.
+const TLS_FIXTURE_MARGIN_YEARS = 10;
+check("the test-only TLS certificate is more than ten years from expiry", () => {
+  const cert = new X509Certificate(
+    readFileSync(join(root, "test", "tls", "TEST-ONLY-localhost-cert.pem")));
+  const notAfter = new Date(cert.validTo);
+  if (Number.isNaN(notAfter.getTime())) {
+    throw new Error(`cannot read notAfter from ${JSON.stringify(cert.validTo)}`);
+  }
+  const deadline = new Date();
+  deadline.setUTCFullYear(deadline.getUTCFullYear() + TLS_FIXTURE_MARGIN_YEARS);
+  if (notAfter <= deadline) {
+    throw new Error(`test/tls certificate expires ${notAfter.toISOString()}; ` +
+      "regenerate it with the command in test/tls/README.md");
   }
   return true;
 });
