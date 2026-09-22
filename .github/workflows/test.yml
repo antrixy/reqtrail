@@ -1,0 +1,45 @@
+name: test
+
+# Runs the suite on every push and pull request.
+#
+# WHY THIS EXISTS: `main` was broken from 2026-09-13 to 2026-09-22 and nothing
+# noticed. A commit replaced test/selftest.mjs with another project's file, so
+# `npm test` could not pass and nothing could have been published. It was found
+# by diffing the v0.3.0 tag against `main` nine days later, not by any check.
+#
+# Until now the ONLY workflow was `publish`, on workflow_dispatch. The suite ran
+# locally, and again at prepack during a publish — so a broken `main` stayed
+# invisible until someone published or cloned fresh. This closes that window to
+# one push.
+#
+# It does NOT replace the release procedure. RELEASE.md still requires `npm test`
+# on a clean checkout and the browser sitting, which needs a browser this runner
+# does not have.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      # `npm ci` for the same reason the publish job needs it: the suite builds
+      # the UI bundle with esbuild before it runs.
+      - name: Install dependencies
+        run: npm ci
+
+      # The whole suite, exactly as RELEASE.md and prepack run it. Not a subset:
+      # the file that broke `main` was a test file, and a subset chosen for speed
+      # is a subset that can hide one.
+      - name: Test
+        run: npm test
