@@ -128,17 +128,19 @@ check("a failed send reports a CODE", () =>
 check("a failed send does not leak the hostname node put in its message", () =>
   !JSON.stringify(bad).includes("secret-host.invalid"));
 
-// `https` IS A REFUSAL UNDER `run`, NOT A TRANSPORT FAILURE. Regression rows:
-// this shipped as exit 3 — "send attempted and failed, nothing to edit, may be
-// transient" — when nothing was attempted and the fix is one character.
+// `run` REFUSING `https` WAS RETIRED 2026-09-22 (HTTPS-PREREGISTRATION D3).
+// Two rows lived here: "run REFUSES https rather than reporting a transport
+// failure" and "the https refusal points at the url". They pinned the
+// transport.unsupported refusal, which D3 deletes because `run` now sends
+// https. They were removed BEFORE the refusal, so `main` stayed green in
+// between. What they guarded is not lost: the refusal existed because 0.3.0
+// shipped `https` as exit 3 when nothing had been attempted. "Code 3 means
+// bytes were attempted" is now checked end to end by test/run-tls.mjs, against
+// a real TLS failure.
+//
+// `resolve` inspecting https was never tied to the refusal, and still holds.
 const httpsWs = JSON.stringify({ version: 1, variables: {},
   requests: [{ id: "r", name: "n", method: "GET", url: "https://example.com/p", headers: [] }] });
-let refused = null;
-try { await run(httpsWs, { env: ENV }); } catch (e) { refused = e; }
-check("run REFUSES https rather than reporting a transport failure", () =>
-  refused !== null && refused.detail?.code === "transport.unsupported");
-check("the https refusal points at the url, so there is something to edit", () =>
-  refused?.detail?.path === "url");
 check("resolve is UNAFFECTED — https is legal to inspect", () => {
   const { view } = __prepareForTest(httpsWs, { env: ENV });
   return view.resolvable === true && view.projection.url === "https://example.com/p";
