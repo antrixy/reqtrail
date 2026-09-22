@@ -14,7 +14,7 @@ import { parseWorkspace, selectRequest } from "../src/core/parse.js";
 import { Refusal } from "../src/core/errors.js";
 import { renderResolve } from "../src/cli/render.js";
 
-const EXPECTED = 200;
+const EXPECTED = 201;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -915,10 +915,9 @@ check("BOUNDARY-EVIDENCE.md keeps the count v0.2.0 SHIPPED", () => {
 // bumping VERSION and verifying the tag resolves to the verified sha — not in a
 // comment the next person has to happen to read.
 //
-// THE DRIFT GUARD IS NOW UNPOINTED, stated rather than hidden: 0.4.0's evidence
-// document does not exist, so the guard has no subject — the reasoning that
-// retired P9. Until it is written, NOTHING checks that a live document tracks
-// the suite count.
+// THE DRIFT GUARD IS POINTED AGAIN, at HTTPS-EVIDENCE.md, in the check below.
+// This one stays frozen at 196: v0.3.0 is published and its record is not
+// editable to suit a later suite.
 check("TRANSPORT-EVIDENCE.md keeps the count v0.3.0 SHIPPED", () => {
   const doc = readSource("TRANSPORT-EVIDENCE.md");
   const quoted = [...doc.matchAll(/selftest\s+(\d+)\/(\d+)/g)].map((m) => Number(m[1]));
@@ -928,6 +927,34 @@ check("TRANSPORT-EVIDENCE.md keeps the count v0.3.0 SHIPPED", () => {
   const wrong = quoted.filter((n) => n !== 196);
   if (wrong.length) {
     throw new Error(`TRANSPORT-EVIDENCE.md says ${wrong.join(", ")}; v0.3.0 shipped 196 and is published`);
+  }
+  return true;
+});
+
+// THE LIVE DRIFT GUARD, pointed at HTTPS-EVIDENCE.md 2026-09-22.
+//
+// Fourth instance of the same transition. The three above (EVIDENCE-0.1.0.md,
+// BOUNDARY-EVIDENCE.md, TRANSPORT-EVIDENCE.md) each began as a drift guard and
+// had to be frozen once its release shipped — twice discovered by a red check
+// demanding that a PUBLISHED record be edited to a count that release never
+// had. `RELEASE.md` now carries the transition as a release action.
+//
+// **AT THE NEXT RELEASE: freeze this one to the count that shipped, and leave
+// this guard unpointed until the following evidence document exists.** Do it as
+// part of the release, not when this check turns red.
+//
+// It compares against EXPECTED, the live count, so adding any check to this
+// file requires updating the document. That is the point: a live evidence
+// document that no longer describes the suite is the failure this catches.
+check("HTTPS-EVIDENCE.md quotes this suite's actual count", () => {
+  const doc = readSource("HTTPS-EVIDENCE.md");
+  const quoted = [...doc.matchAll(/selftest\s+(\d+)\/(\d+)/g)].map((m) => Number(m[1]));
+  if (quoted.length === 0) {
+    throw new Error("HTTPS-EVIDENCE.md quotes no selftest count");
+  }
+  const wrong = quoted.filter((n) => n !== EXPECTED);
+  if (wrong.length) {
+    throw new Error(`HTTPS-EVIDENCE.md says ${wrong.join(", ")}; the suite is at ${EXPECTED}`);
   }
   return true;
 });
