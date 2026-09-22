@@ -178,8 +178,11 @@ is a perfectly valid hostname to a DNS resolver — so reqtrail does.
 | `2` | Usage error | Fix the command |
 | `3` | Send attempted and failed | Nothing to edit; may be transient |
 
-**Code 3 means bytes were attempted.** An `https://` URL is code 1, not 3:
-`resolve` will show it, `run` refuses it, and the fix is in your file.
+**Code 3 means bytes were attempted.** Anything refused before a socket opens
+is code 1, because the fix is in your file. A certificate `run` cannot verify —
+untrusted, or issued for a different host — is code 3: bytes went out,
+and nothing in the workspace would fix it. Certificate verification cannot be
+turned off, including by `NODE_TLS_REJECT_UNAUTHORIZED=0`.
 
 **Code 3 is `run` only.** `resolve` never sends, so nothing can fail in transit;
 an unresolved reference is code 1 under both verbs, because nothing was sent and
