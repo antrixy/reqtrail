@@ -201,6 +201,28 @@ try {
     await page.close(); await srv.close();
   }
 
+  // ---- F8: the page states that it is a snapshot (0.4.1, D6) -------------
+  // test/selftest.mjs checks the terminal banner through the real binary.
+  // Nothing in `npm test` renders main.jsx, and F3's dump stops at 90
+  // characters — before this sentence — so this row is the only oracle for it.
+  {
+    const tk = newToken();
+    const srv = createUiServer({
+      text: JSON.stringify({ version: 1,
+        requests: [{ id: "r", method: "GET", url: "https://a.example/" }] }),
+      file: "f.json", token: tk, assets, env: {} });
+    const p = await srv.listen();
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${p}/#token=${tk}`, { waitUntil: "networkidle" });
+    const text = (await page.textContent("body")).replace(/\s+/g, " ");
+    const at = text.indexOf("This is the file");
+    record("F8",
+      text.includes("This is the file as it was when reqtrail ui started.") &&
+        text.includes("restart reqtrail ui after editing") ? "right" : "wrong",
+      `shows: ${JSON.stringify(at === -1 ? text.slice(0, 90) : text.slice(at, at + 130))}`);
+    await page.close(); await srv.close();
+  }
+
   // ---- F4: --request is honoured -----------------------------------------
   {
     const tk = newToken();

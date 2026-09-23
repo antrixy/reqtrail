@@ -14,7 +14,7 @@ import { parseWorkspace, selectRequest, decodeWorkspace } from "../src/core/pars
 import { Refusal } from "../src/core/errors.js";
 import { renderResolve } from "../src/cli/render.js";
 
-const EXPECTED = 219;
+const EXPECTED = 220;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -1068,11 +1068,11 @@ check("TRANSPORT-EVIDENCE.md keeps the count v0.3.0 SHIPPED", () => {
 // checks did. The freeze moved to "the next release" in the comment that sat
 // here, and the next release's first new check arrived before its release.
 //
-// THE DRIFT GUARD IS UNPOINTED until HONESTY-PATCH-EVIDENCE.md exists. Nothing
-// checks that a live document tracks the suite count in the meantime, which is
-// stated rather than hidden. The procedure change — freeze a release's own
-// guard as the step after tagging, and create the next evidence document with
-// the next pre-registration — is recorded in HONESTY-PATCH-EVIDENCE.md.
+// THE DRIFT GUARD WAS UNPOINTED from the freeze until HONESTY-PATCH-EVIDENCE.md
+// existed; it is pointed there by the check that follows this one. The
+// procedure change — freeze a release's own guard as the step after tagging,
+// and create the next evidence document with the next pre-registration — is in
+// RELEASE.md steps 2, 3 and 17.
 check("HTTPS-EVIDENCE.md keeps the count v0.4.0 SHIPPED", () => {
   const doc = readSource("HTTPS-EVIDENCE.md");
   const quoted = [...doc.matchAll(/selftest\s+(\d+)\/(\d+)/g)].map((m) => Number(m[1]));
@@ -1082,6 +1082,25 @@ check("HTTPS-EVIDENCE.md keeps the count v0.4.0 SHIPPED", () => {
   const wrong = quoted.filter((n) => n !== 201);
   if (wrong.length) {
     throw new Error(`HTTPS-EVIDENCE.md says ${wrong.join(", ")}; v0.4.0 shipped 201 and is published`);
+  }
+  return true;
+});
+
+// THE LIVE DRIFT GUARD, pointed at HONESTY-PATCH-EVIDENCE.md 2026-09-23.
+//
+// **RELEASE.md STEP 17: freeze this one at the count 0.4.1 ships, as the first
+// commit after publishing.** It compares against EXPECTED, so it is right until
+// the tag exists and wrong the instant after — the fifth instance of this class
+// was a guard left pointing at a published document.
+check("HONESTY-PATCH-EVIDENCE.md quotes this suite's actual count", () => {
+  const doc = readSource("HONESTY-PATCH-EVIDENCE.md");
+  const quoted = [...doc.matchAll(/selftest\s+(\d+)\/(\d+)/g)].map((m) => Number(m[1]));
+  if (quoted.length === 0) {
+    throw new Error("HONESTY-PATCH-EVIDENCE.md quotes no selftest count");
+  }
+  const wrong = quoted.filter((n) => n !== EXPECTED);
+  if (wrong.length) {
+    throw new Error(`HONESTY-PATCH-EVIDENCE.md says ${wrong.join(", ")}; the suite is at ${EXPECTED}`);
   }
   return true;
 });
