@@ -13,7 +13,8 @@ Verified at `84e7e5f2623635a88e6b0181b69f2b61a1bca60c`, archive sha256
 `fd635f50fa77b3b42a7c69d668e83d1faea57c746d905670c0e4c68a9b67ea23`, plus the
 commit that adds this file: the version bump to 0.4.1 in all four places and
 the live drift guard pointed here. The counts below are from that combined tree
-on Node 22.22.2.
+on Node 22.22.2, except sitting A: run on the release tree `fcafe17` on macOS,
+Google Chrome, Node 24.4.1.
 
     refusals    43/43 carry a literal message
     selftest    220/220
@@ -26,7 +27,7 @@ on Node 22.22.2.
     wire-tls    16/16
     run-tls     12/12
     mutation    75/75 accounted for (1 equivalent, 2 uncovered)
-    sitting A   PENDING — see "Release steps outside the repo"
+    sitting A   15/17 held — F8 right; B10 (meta) wrong; F7 answered elsewhere
 
 ## What changed, and what a user sees
 
@@ -188,11 +189,14 @@ folder at a time. Three intermediate commits were red on CI:
 | `590a9e9` | test run 3, failed | new oracle before the escape fix — the intended baseline |
 | `47237c8` | test run 6, failed | escape fix before the `main.js` argument fix |
 | `e281fb7` | test run 9, failed | userinfo refusal before its rewritten check |
+| `d4fd3e3` | test run 22, failed | version bumped in `package.json` before `src/cli/main.js` |
 
 From increment 5 onward, uploads were ordered so that every commit is green:
 source first where the old tests still pass against it, tests last. **For a
 rewrite increment no order is green**, because the rewritten check and the fix
-depend on each other. Every commit was verified afterwards from a sha-pinned
+depend on each other. The version bump is the same shape: `package.json` and
+`src/cli/main.js` must change together, and a single upload from the repo root
+still split by folder. Every commit was verified afterwards from a sha-pinned
 codeload archive and a clean `npm test`.
 
 ## Carried
@@ -215,22 +219,43 @@ codeload archive and a clean `npm test`.
 - **UI change detection.** 0.4.1 only states the snapshot.
 - **The planning spec's "deterministic serialization" line** is corrected in
   `project-planning`, not here.
+- **The sitting ran on Node 24; CI runs only Node 22.** The engine range is
+  `>=22` with no upper bound and no matrix — the review's RT-B6 runtime item.
 
 ## Release steps outside the repo — PENDING
 
 Following `RELEASE.md`. Each line is filled in when the step is done, with
 what was observed.
 
-- **Step 5, browser sitting** (`CHROMIUM_PATH=... node test/sitting-browser.mjs`):
-  PENDING. **New row F8** checks that the page renders the snapshot sentence
-  ("This is the file as it was when reqtrail ui started." and "restart reqtrail
-  ui after editing"). It was added because F3's page-text dump, which
-  `RELEASE.md` step 5 relies on, stops at 90 characters — before the new
-  sentence. The sitting gates on every non-meta row, so F8 wrong stops the
-  release.
+- **Step 5, browser sitting: DONE, 15/17 held, gate passes.** Run on the
+  release tree `fcafe17`, confirmed before running by its codeload archive
+  sha256 (`b68a01bc…c9a16f`), version `0.4.1` and the presence of row F8.
+  Google Chrome on macOS, Node 24.4.1.
+
+      B1–B9   all RIGHT
+      F1 F2 F6 F3 F8 F4 B5   all RIGHT
+      F3      shows: "reqtrail f.json This view shows requests. It does not
+              send them — run reqtrail run to send."
+      F8      shows: "This is the file as it was when reqtrail ui started.
+              Edits to it do not appear here — restart reqtrail ui after
+              editing."
+      F7      ANSWERED ELSEWHERE (test/ui.mjs)
+      B10     WRONG — "0 of B1-B9 wrong"; a meta-prediction, excluded from
+              the gate by name
+
+  **F3's dump ends exactly where the new sentence begins**, which is the reason
+  F8 was added: `RELEASE.md` step 5 relied on F3's page text, and F3 alone would
+  have shown nothing about 0.4.1's change.
+
+  **The step failed twice on setup before it ran, and the first attempt used the
+  wrong tree.** The command given had a placeholder `CHROMIUM_PATH`, taken
+  literally; then `dist/index.html` did not exist, because `dist/` is gitignored
+  and only `npm test`'s `pretest` builds it. The first attempt also ran in an old
+  `reqtrail-0.4.0` checkout, whose sitting has no F8. `RELEASE.md` step 5 now
+  gives the build step, a real macOS path, and the release-tree requirement.
 - **Step 6, surfaces no check reads** (GitHub About sidebar): PENDING.
-- **Steps 9–11, tag `v0.4.1`** on the commit that adds this file, verified by
-  sha: PENDING.
+- **Steps 9–11, tag `v0.4.1`** on the commit that records the sitting (the one
+  carrying this line), verified by sha: PENDING.
 - **Steps 12–13, publish**: PENDING.
 - **Steps 14–15, registry tarball diffed against the tag; published binary
   run**: PENDING.

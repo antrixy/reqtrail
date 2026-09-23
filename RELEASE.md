@@ -47,11 +47,26 @@ document to the start of the next release.
 **4. `npm test` on a CLEAN checkout**, not on the machine you have been building
 on. `prepack` runs it again during publish; both matter.
 
-**5. Run the browser sitting.** `CHROMIUM_PATH=... node test/sitting-browser.mjs`.
+**5. Run the browser sitting, on the release tree, after building the UI.**
+
+    npm install --no-save playwright-core
+    npm run build:ui
+    CHROMIUM_PATH="<browser executable>" node test/sitting-browser.mjs
+
+`CHROMIUM_PATH` is the executable, not the app bundle — on macOS with Chrome,
+`/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`. **`dist/` is
+gitignored**, so a clean checkout has no bundle until `build:ui` runs; `npm test`
+builds it through `pretest`, the sitting does not. At 0.4.1 this step failed
+twice on setup before it ran: a placeholder path taken literally, then a missing
+`dist/index.html`. And run it on the RELEASE tree — the first 0.4.1 attempt ran
+in an old 0.4.0 checkout, whose sitting has no row for 0.4.1's page text.
+
 `src/ui/main.jsx` is an uncovered mutation gap — `ui 27/27` says the bundle
 builds and the extracted decisions are right; it does **not** say the component
 renders. The sitting's `F3` prints the page text, and **that dump is what caught
-`main.jsx` claiming the release could not send.**
+`main.jsx` claiming the release could not send.** F3 prints only the first 90
+characters, so a sentence further down the page needs its own row, as `F8` is
+for the snapshot sentence.
 
 **6. Grep the surfaces a check cannot read.** The selftest forbids `this
 release`, `current release`, `arrives in N`, `ships in N` in `README.md`,
