@@ -13,8 +13,9 @@ import { project } from "../src/core/exact.js";
 import { parseWorkspace, selectRequest, decodeWorkspace } from "../src/core/parse.js";
 import { Refusal } from "../src/core/errors.js";
 import { renderResolve } from "../src/cli/render.js";
+import { wireOptions } from "../src/transport/http.js";
 
-const EXPECTED = 237;
+const EXPECTED = 243;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -1332,6 +1333,44 @@ check("transport: a secret host is in the exact transport and in no public field
     && exact.transport.port === 81
     && !JSON.stringify(view).includes("secret-host.example")
     && !JSON.stringify(view).includes("connectHostname");
+});
+
+// THE TRANSPORT READS, AND PARSES NOTHING (D2). `wireOptions` is pure so these
+// rows observe the translation here, where the mutation harness runs, rather
+// than only in wire.mjs, which it does not run until 0.6.0.
+const optionsOf = (url, env = {}) =>
+  wireOptions(__prepareForTest(one(url), { env, source: "t.json" }).exact);
+check("wireOptions: an IPv6 literal goes to node unbracketed (RT-B2)", () => {
+  const o = optionsOf("http://[::1]:8080/ipv6");
+  return o.hostname === "::1" && o.port === 8080 && o.path === "/ipv6";
+});
+check("wireOptions: a bare ? is in the path node sends (RT-A2)", () =>
+  optionsOf("http://127.0.0.1:8080/p?").path === "/p?");
+check("wireOptions: the https default port is 443, not the authority's absence", () => {
+  const o = optionsOf("https://example.com/");
+  return o.protocol === "https:" && o.hostname === "example.com" && o.port === 443;
+});
+check("wireOptions: the connect hostname is not the authority", () =>
+  optionsOf("http://example.com:8080/").hostname === "example.com");
+check("the transport contains no URL parsing — `new URL(` and `urlToHttpOptions` are forbidden", () => {
+  const src = stripComments(readSource("src/transport/http.js"));
+  return !/new\s+URL\s*\(/.test(src) && !/urlToHttpOptions/.test(src);
+});
+
+// D5: REQTRAIL_NO_IPV6 exists so a machine without `::1` can run the suite and
+// SAY it skipped the IPv6 rows. CI must never take that exit.
+check("REQTRAIL_NO_IPV6 appears nowhere under .github/", () => {
+  const hits = [];
+  const walk = (rel) => {
+    for (const d of readdirSync(join(root, rel), { withFileTypes: true })) {
+      const r = `${rel}/${d.name}`;
+      if (d.isDirectory()) walk(r);
+      else if (readSource(r).includes("REQTRAIL_NO_IPV6")) hits.push(r);
+    }
+  };
+  walk(".github");
+  if (hits.length) throw new Error(`found in ${hits.join(", ")}`);
+  return true;
 });
 
 check("`exact` never reaches the public result", () => {

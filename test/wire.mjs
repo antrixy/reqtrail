@@ -14,6 +14,7 @@
 // it does not mean that.
 
 import http from "node:http";
+import net from "node:net";
 import { startReceiver, parseCapture } from "../slice0/receiver.mjs";
 import { __prepareForTest, run } from "../src/core/prepare.js";
 import { send, wireHeaders } from "../src/transport/http.js";
@@ -22,7 +23,15 @@ import { send, wireHeaders } from "../src/transport/http.js";
 // running — an early exit, a skipped branch, a check deleted in passing —
 // used to be invisible here: the summary printed whatever ran, over itself.
 // It lands before 0.5.0 adds any row, so every new row moves this number.
-const EXPECTED = 23;
+const EXPECTED = 27;
+
+// IPv6 ROWS RUN OR FAIL; THEY NEVER SKIP SILENTLY (D5). They need to bind
+// `::1`. If that fails the suite FAILS, naming the variable below. With
+// REQTRAIL_NO_IPV6=1 they are not run, the summary line says how many and why,
+// and the tripwire expects exactly that many fewer. A selftest check forbids
+// the variable anywhere under .github/, so CI cannot take this exit.
+const IPV6_ROWS = 2;
+const NO_IPV6 = process.env.REQTRAIL_NO_IPV6 === "1";
 
 let passed = 0;
 const failures = [];
@@ -61,10 +70,11 @@ const RUNTIME = new Set(["connection"]);
 const wire = cap.headers.filter((h) => !RUNTIME.has(h.name.toLowerCase()))
                         .map((h) => [h.name, h.value]);
 const built = exact.headers.map((h) => [h.name, h.value.text]);
-const u = new URL(exact.url.text);
-
 check("P-WIRE method", () => cap.method === exact.method);
-check("P-WIRE target", () => cap.target === u.pathname + u.search);
+// REWRITTEN 0.5.0 (D6): this row compared against `u.pathname + u.search` —
+// the transport's own expression, so it passed on RT-A2 by construction. The
+// expected target is now written out.
+check("P-WIRE target", () => cap.target === "/users/42?q=a%20b");
 check("P-WIRE header block is the exact request's, pair for pair, in order", () =>
   JSON.stringify(wire) === JSON.stringify(built));
 check("P-WIRE interleaving across repeated and distinct names survives", () =>
@@ -97,6 +107,22 @@ await send(e3);
 const c3 = parseCapture(r.captures[b2]);
 check("P-CONTAIN a secret header value is on the wire and masked in the view", () =>
   c3.raw.includes("secret.internal") && !JSON.stringify(v3).includes("secret.internal"));
+
+// P-TARGET (RT-A2). A bare `?` is shown, so it is sent. The second row states
+// the property from outputs alone: the projection's URL is the scheme, the Host
+// that reached the wire, and the target that reached the wire.
+const b4 = r.captures.length;
+const bareWs = JSON.stringify({ version: 1, variables: {},
+  requests: [{ id: "r", name: "n", method: "GET", url: `http://127.0.0.1:${r.port}/p?`, headers: [] }] });
+const { exact: e4, view: v4 } = __prepareForTest(bareWs, { env: ENV });
+await send(e4);
+const c4 = parseCapture(r.captures[b4]);
+check("P-TARGET a bare ? reaches the wire", () => c4.target === "/p?");
+check("P-TARGET the projection URL is scheme + wire Host + wire target", () => {
+  const host = c4.headers.find((h) => h.name === "Host").value;
+  return v4.projection.url === `http://${host}${c4.target}`
+    && v4.projection.url === `http://127.0.0.1:${r.port}/p?`;
+});
 
 r.close();
 
@@ -184,7 +210,11 @@ check("resolve is UNAFFECTED — https is legal to inspect", () => {
 // which is the only way anything reaches the guard now.
 let direct = null;
 try {
-  await send({ method: "GET", url: { text: "ftp://example.com/p" }, headers: [] });
+  // INPUT RESHAPED 0.5.0 (D2), assertion unchanged: `send` reads the scheme
+  // from `exact.transport` now, so a hand-built request supplies one.
+  await send({ method: "GET", url: { text: "ftp://example.com/p" }, headers: [],
+    transport: { protocol: "ftp:", connectHostname: "example.com", port: 21,
+      authority: "example.com", requestTarget: "/p" } });
 } catch (e) { direct = e; }
 check("send still guards the protocol when called directly", () =>
   direct?.code === "transport.protocol");
@@ -198,13 +228,55 @@ const { status } = await send(e2);
 srv.close();
 check("W-REAL a real HTTP/1.1 server accepts the request", () => status === 200);
 
+// ---- IPv6 (RT-B2), under D5 --------------------------------------------------
+// On 0.4.1 the transport passed `[::1]` to node as a hostname and got ENOTFOUND
+// in milliseconds. The raw receiver row checks endpoint, Host and target on the
+// wire; the `run` row checks that a real server on ::1 answers, end to end.
+let ipv6NotRun = 0;
+const bindable = NO_IPV6 ? null : await new Promise((res) => {
+  const probe = net.createServer();
+  probe.once("error", (e) => res(e.code ?? "error"));
+  probe.listen(0, "::1", () => probe.close(() => res(true)));
+});
+if (NO_IPV6) {
+  ipv6NotRun = IPV6_ROWS;
+} else if (bindable !== true) {
+  failures.push(`IPv6: cannot bind ::1 (${bindable}). These ${IPV6_ROWS} rows need it. ` +
+    "Set REQTRAIL_NO_IPV6=1 to not run them; the summary will say so.");
+} else {
+  const r6 = await startReceiver("::1");
+  const ws6 = JSON.stringify({ version: 1, variables: {},
+    requests: [{ id: "r", name: "n", method: "GET", url: `http://[::1]:${r6.port}/ipv6?`, headers: [] }] });
+  const { exact: e6 } = __prepareForTest(ws6, { env: ENV });
+  const b6 = r6.captures.length;
+  let sent6 = null;
+  try { sent6 = await send(e6); } catch (e) { sent6 = e.code; }
+  const c6 = r6.captures[b6] ? parseCapture(r6.captures[b6]) : null;
+  r6.close();
+  check("P-ENDPOINT an IPv6 literal is sent: Host bracketed, target intact", () =>
+    sent6?.status === 200 && c6 !== null
+    && c6.headers.find((h) => h.name === "Host").value === `[::1]:${r6.port}`
+    && c6.target === "/ipv6?");
+
+  const real6 = http.createServer((q, s) => s.end("ok"));
+  await new Promise((res) => real6.listen(0, "::1", res));
+  const run6 = await run(JSON.stringify({ version: 1, variables: {},
+    requests: [{ id: "r", name: "n", method: "GET", url: `http://[::1]:${real6.address().port}/p`, headers: [] }] }),
+    { env: ENV });
+  real6.close();
+  check("W-REAL/IPv6 run reaches a real server on ::1", () =>
+    run6.sent === true && run6.response.status === 200);
+}
+
 if (failures.length) {
   console.error(`FAIL ${failures.length} of ${passed}`);
   for (const f of failures) console.error("  " + f);
 }
-if (passed !== EXPECTED) {
-  console.error(`FAIL count tripwire: ran ${passed} checks, expected ${EXPECTED}`);
+if (passed !== EXPECTED - ipv6NotRun) {
+  console.error(`FAIL count tripwire: ran ${passed} checks, expected ${EXPECTED - ipv6NotRun}`);
   process.exit(1);
 }
 if (failures.length) process.exit(1);
-console.log(`wire ${passed}/${EXPECTED} OK`);
+console.log(ipv6NotRun
+  ? `wire ${passed}/${EXPECTED - ipv6NotRun} OK   (${ipv6NotRun} IPv6 rows NOT RUN: REQTRAIL_NO_IPV6=1)`
+  : `wire ${passed}/${EXPECTED} OK`);

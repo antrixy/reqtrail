@@ -103,10 +103,10 @@ const RUNTIME = new Set(["connection"]);
 const wire = cap.headers.filter((h) => !RUNTIME.has(h.name.toLowerCase()))
                         .map((h) => [h.name, h.value]);
 const built = exact.headers.map((h) => [h.name, h.value.text]);
-const u = new URL(exact.url.text);
-
 check("P-WIRE/TLS method", () => cap.method === exact.method);
-check("P-WIRE/TLS target", () => cap.target === u.pathname + u.search);
+// REWRITTEN 0.5.0 (D6): compared against `u.pathname + u.search`, the
+// transport's own expression. The expected target is now written out.
+check("P-WIRE/TLS target", () => cap.target === "/users/42?q=a%20b");
 check("P-WIRE/TLS header block is the exact request's, pair for pair, in order", () =>
   JSON.stringify(wire) === JSON.stringify(built));
 check("P-WIRE/TLS interleaving across repeated and distinct names survives", () =>
