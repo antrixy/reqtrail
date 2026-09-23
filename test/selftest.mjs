@@ -750,8 +750,15 @@ check("--version prints only the version, and nothing else", () => {
   return /^\d+\.\d+\.\d+\n?$/.test(out);
 });
 check("--help exits 0", () => run(["--help"]).code === 0);
-check("help says nothing is sent", () =>
-  run(["--help"]).stdout.includes("run shows it and then sends it"));
+// REWRITTEN AT THE 0.4.1 RELEASE CHECK. This pinned the literal "run shows it
+// and then sends it" — which was false: `run` awaits the send and prints the
+// request afterwards (review finding RT-A1, fixed in the execution release).
+// The check was the thing keeping the false sentence in place, the same shape
+// as the "0.1.0 sends nothing" pin. It now pins what its NAME always meant,
+// and names no order for `run`, so reordering `run` later cannot turn it into
+// a guard against the correction.
+check("help says resolve never sends", () =>
+  run(["--help"]).stdout.includes("resolve shows the request and never sends it."));
 check("a refusal in --json mode emits JSON on stderr", () => {
   const r = run(["resolve", exFile, "--json"]);
   return JSON.parse(r.stderr).error.code === "selection.ambiguous";
