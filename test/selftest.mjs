@@ -1093,21 +1093,23 @@ check("HTTPS-EVIDENCE.md keeps the count v0.4.0 SHIPPED", () => {
   return true;
 });
 
-// THE LIVE DRIFT GUARD, pointed at HONESTY-PATCH-EVIDENCE.md 2026-09-23.
+// FROZEN 2026-09-23 at 220, the count v0.4.1 shipped — RELEASE.md step 17,
+// done as the first commit after publishing, for the first time as a planned
+// step rather than discovered by a red check.
 //
-// **RELEASE.md STEP 17: freeze this one at the count 0.4.1 ships, as the first
-// commit after publishing.** It compares against EXPECTED, so it is right until
-// the tag exists and wrong the instant after — the fifth instance of this class
-// was a guard left pointing at a published document.
-check("HONESTY-PATCH-EVIDENCE.md quotes this suite's actual count", () => {
+// THE DRIFT GUARD IS UNPOINTED until the next release's pre-registration commit
+// creates its evidence document and points a new live guard at it (RELEASE.md
+// step 2). Until then nothing checks that a live document tracks the suite
+// count; that gap is stated here rather than left silent.
+check("HONESTY-PATCH-EVIDENCE.md keeps the count v0.4.1 SHIPPED", () => {
   const doc = readSource("HONESTY-PATCH-EVIDENCE.md");
   const quoted = [...doc.matchAll(/selftest\s+(\d+)\/(\d+)/g)].map((m) => Number(m[1]));
   if (quoted.length === 0) {
     throw new Error("HONESTY-PATCH-EVIDENCE.md quotes no selftest count");
   }
-  const wrong = quoted.filter((n) => n !== EXPECTED);
+  const wrong = quoted.filter((n) => n !== 220);
   if (wrong.length) {
-    throw new Error(`HONESTY-PATCH-EVIDENCE.md says ${wrong.join(", ")}; the suite is at ${EXPECTED}`);
+    throw new Error(`HONESTY-PATCH-EVIDENCE.md says ${wrong.join(", ")}; v0.4.1 shipped 220 and is published`);
   }
   return true;
 });
