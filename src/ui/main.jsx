@@ -14,7 +14,8 @@ import { initialSelection, classifyResponse, makeSequencer } from "./logic.js";
 
 // The session token arrives in the URL FRAGMENT, which browsers never send to a
 // server. It is read once and removed from the address bar, so it survives in
-// no history entry, no Referer and no log.
+// no history entry and no Referer. (It is printed in the terminal that started
+// the session — "no log" was narrowed in 0.4.1, D9.)
 function takeToken() {
   const hash = window.location.hash;
   const token = hash.startsWith("#token=") ? hash.slice(7) : "";
@@ -236,6 +237,15 @@ function App() {
         <p className="standing">
           This view shows requests. It does not send them — run{" "}
           <code>reqtrail run</code> to send.
+        </p>
+        {/* THE SNAPSHOT, STATED (0.4.1, D6). The server holds the file as it
+            was when `reqtrail ui` started; an edit does not reach this page.
+            Version-free, like the sentence above, so it stays true until
+            change detection exists — and then it must be removed, not left. */}
+        <p className="standing">
+          This is the file as it was when <code>reqtrail ui</code> started.
+          Edits to it do not appear here — restart <code>reqtrail ui</code> after
+          editing.
         </p>
       </header>
 
