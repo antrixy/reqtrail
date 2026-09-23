@@ -4,7 +4,9 @@
 // mode from import-fidelity-spike, one project earlier.
 import net from "node:net";
 
-export function startReceiver() {
+// `host` defaults to IPv4 loopback, as every caller before 0.5.0 assumed. The
+// IPv6 rows pass "::1" (EXACT-TRANSPORT-PREREGISTRATION.md D5).
+export function startReceiver(host = "127.0.0.1") {
   const captures = [];
   const server = net.createServer((socket) => {
     const chunks = [];
@@ -20,8 +22,11 @@ export function startReceiver() {
     });
     socket.on("error", () => {});
   });
-  return new Promise((res) => {
-    server.listen(0, "127.0.0.1", () =>
+  // A bind that fails REJECTS rather than throwing out of an event handler, so
+  // a caller can say which address could not be bound.
+  return new Promise((res, rej) => {
+    server.once("error", rej);
+    server.listen(0, host, () =>
       res({ port: server.address().port, captures, close: () => server.close() })
     );
   });
