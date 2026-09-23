@@ -57,6 +57,10 @@ Recorded per increment, before the fix lands.
   `ENOENT` on `EXACT-TRANSPORT-EVIDENCE.md`. Run with this file's count edited
   to the baseline's 220: failed, naming the stale count and the suite's 221.
   Passes on the file as committed.
+- **Increment 2, the tripwires.** Each shown to bite by setting its expected
+  count one above what runs: `wire` failed "ran 23 checks, expected 24",
+  `wire-tls` failed "ran 16 checks, expected 17", both exit 1. Counts unchanged:
+  wire 23, wire-tls 16. The summary line keeps its format.
 
 ## What the pre-registration did not foresee
 
