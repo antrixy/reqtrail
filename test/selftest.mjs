@@ -2,7 +2,7 @@
 // count is asserted at the end: adding a check without updating EXPECTED fails
 // the run, and so does a check that silently stops executing.
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { X509Certificate } from "node:crypto";
 import { readFileSync, readdirSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,7 +14,7 @@ import { parseWorkspace, selectRequest, decodeWorkspace } from "../src/core/pars
 import { Refusal } from "../src/core/errors.js";
 import { renderResolve } from "../src/cli/render.js";
 
-const EXPECTED = 215;
+const EXPECTED = 217;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -566,6 +566,28 @@ check("no user-visible prose pins a release", () => {
     if (hit) throw new Error(`${f} pins a release: ${hit.trim().slice(0, 60)}`);
   }
   return true;
+});
+
+// D6. The UI serves a snapshot, and the banner the user reads says so. Run as
+// the real binary: the banner is printed after the listener is up, so the
+// process is started, given time to print, and killed — it has no exit of its
+// own. HONESTY-PATCH-PREREGISTRATION.md D6, P-TERMINAL.
+const uiBanner = (name) => {
+  const dir = mkdtempSync(join(tmpdir(), "reqtrail-banner-"));
+  try {
+    const f = join(dir, name);
+    writeFileSync(f, ws({ requests: [{ id: "r", method: "GET", url: "https://a.example/" }] }));
+    return spawnSync(process.execPath, [bin, "ui", f],
+      { env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 3000 }).stdout ?? "";
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+};
+check("the ui banner says the file is read once and needs a restart", () => {
+  const out = uiBanner("w.json");
+  return out.includes("w.json as read at startup") && out.includes("restart after editing it");
+});
+check("the ui banner escapes the file name it echoes", () => {
+  const out = uiBanner("x\rFAKE.json");
+  return out.includes("x\\u000dFAKE.json") && !out.includes("\r");
 });
 
 check("the DISPLAY marks a derived header, not only --json", () => {

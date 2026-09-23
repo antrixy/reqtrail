@@ -277,7 +277,9 @@ await check("rows 3, 4 — the enforcement interval is set, not left at 30s", ()
 
 // ------------------------------------------ server rows 7, 8: error shape ----
 
-await check("row 7 — errors are uniform JSON", async () => {
+// Label narrowed in 0.4.1 (D9); the assertion is unchanged. It always tested a
+// handler-generated 404, which is what row 7 now claims.
+await check("row 7 — handler errors are JSON", async () => {
   const r = await post("/nope");
   const body = await r.json();
   return r.headers.get("content-type").startsWith("application/json") &&
