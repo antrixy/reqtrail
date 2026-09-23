@@ -10,11 +10,11 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { resolveWorkspace, __prepareForTest } from "../src/core/prepare.js";
 import { project } from "../src/core/exact.js";
-import { parseWorkspace, selectRequest } from "../src/core/parse.js";
+import { parseWorkspace, selectRequest, decodeWorkspace } from "../src/core/parse.js";
 import { Refusal } from "../src/core/errors.js";
 import { renderResolve } from "../src/cli/render.js";
 
-const EXPECTED = 208;
+const EXPECTED = 215;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -75,6 +75,51 @@ check("root array refuses", () =>
   refusal(() => go("[]")).code === "schema.type");
 check("unknown root key refuses", () =>
   refusal(() => go(ws({ requests: [], oops: 1 }))).code === "schema.unknown-key");
+// D8. A root key's path is `oops`, not `.oops` — the dot joined the key to an
+// empty parent. HONESTY-PATCH-PREREGISTRATION.md D8.
+check("a root key's path has no leading dot", () =>
+  refusal(() => go(ws({ requests: [], oops: 1 }))).path === "oops");
+check("a nested key's path keeps its parent", () =>
+  refusal(() => go(ws({ requests: [{ id: "r", method: "GET", url: "https://a.example", secret: true }] })))
+    .path === "requests[0].secret");
+
+// P-BYTES, D1. The file is read byte for byte: invalid UTF-8 is refused before
+// JSON parsing, never repaired. 0.4.0 read it with readFileSync(file, "utf8"),
+// which replaces a bad byte with U+FFFD, and a raw 0x80 in a URL resolved to
+// `http://example.com/%EF%BF%BD` — a request no byte of the file expressed.
+const bytes = (...parts) => Buffer.concat(parts.map((p) =>
+  typeof p === "string" ? Buffer.from(p, "utf8") : Buffer.from(p)));
+const BAD_UTF8 = bytes('{"version":1,"requests":[{"id":"r","method":"GET","url":"http://a.example/', [0x80], '"}]}');
+check("invalid UTF-8 refuses as workspace.encoding", () =>
+  refusal(() => decodeWorkspace(BAD_UTF8, "t.json")).code === "workspace.encoding");
+check("valid UTF-8 decodes unchanged", () =>
+  decodeWorkspace(bytes('{"v":"caf\u00e9 \u{1F600}"}'), "t.json") === '{"v":"caf\u00e9 \u{1F600}"}');
+// P7: the BOM stays in the text, so JSON.parse refuses it exactly as 0.4.0 did.
+// Accepting a BOM is a relaxation for a later release; relaxing later breaks
+// nothing, tightening later breaks files.
+check("a BOM is kept, and refused as schema.json as in 0.4.0", () =>
+  refusal(() => go(decodeWorkspace(bytes([0xef, 0xbb, 0xbf], ws({ requests: [] })), "t.json")))
+    .code === "schema.json");
+check("the CLI refuses invalid UTF-8 with exit 1 and shows no repaired URL", () => {
+  const dir = mkdtempSync(join(tmpdir(), "reqtrail-utf8-"));
+  try {
+    const f = join(dir, "bad.json");
+    writeFileSync(f, BAD_UTF8);
+    const r = run(["resolve", f]);
+    return r.code === 1 && r.stderr.includes("[workspace.encoding]") &&
+      !(r.stdout + r.stderr).includes("%EF%BF%BD");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+check("under --json the encoding refusal is a JSON error on stderr", () => {
+  const dir = mkdtempSync(join(tmpdir(), "reqtrail-utf8-"));
+  try {
+    const f = join(dir, "bad.json");
+    writeFileSync(f, BAD_UTF8);
+    const r = run(["resolve", f, "--json"]);
+    return r.code === 1 && r.stdout === "" &&
+      JSON.parse(r.stderr).error.code === "workspace.encoding";
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
 check("unknown request key refuses", () =>
   refusal(() => go(ws({ requests: [{ id: "r", method: "GET", url: "https://a.example", secret: true }] })))
     .code === "schema.unknown-key");
