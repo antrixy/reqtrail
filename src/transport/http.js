@@ -38,18 +38,28 @@ export function wireHeaders(exact) {
   return flat;
 }
 
-// The origin and target, read from the ALREADY-NORMALIZED exact URL. This
-// parses; it does not normalize. `exact.url.text` is the output of the core's
-// single normalization, so re-parsing it is idempotent — and if it ever is not,
-// that is a defect in the core rather than something for this file to paper
-// over, so nothing here re-encodes or repairs.
-export function wireTarget(exact) {
-  const u = new URL(exact.url.text);
+// The endpoint and target, READ from the exact request's `transport`, which the
+// core derived from its one normalized href (EXACT-TRANSPORT-PREREGISTRATION.md
+// D1, D2). This file parses nothing.
+//
+// Until 0.5.0 this was `wireTarget`, which re-parsed `exact.url.text` and
+// rebuilt what to send from display text. Two things were lost on the way:
+// the target was rebuilt as `pathname + search`, which drops a bare `?`
+// (RT-A2), and the hostname kept its IPv6 brackets, which node treats as a DNS
+// name and fails ENOTFOUND (RT-B2). A selftest check forbids `new URL(` and
+// `urlToHttpOptions` in this file, so neither route back is open by accident.
+//
+// PURE, like `wireHeaders`, so selftest — which the mutation harness runs —
+// can observe the translation without a socket.
+export function wireOptions(exact) {
+  const t = exact.transport;
   return {
-    protocol: u.protocol,
-    hostname: u.hostname,
-    port: u.port,
-    path: u.pathname + u.search,
+    protocol: t.protocol,
+    hostname: t.connectHostname,
+    port: t.port,
+    path: t.requestTarget,
+    method: exact.method,
+    headers: wireHeaders(exact),
   };
 }
 
@@ -63,20 +73,18 @@ export function wireTarget(exact) {
 // over it (measured 2026-09-22). This is transport configuration, not request
 // content — the header block rule above is untouched.
 export function send(exact) {
-  const t = wireTarget(exact);
-  const tls = t.protocol === "https:";
-  if (t.protocol !== "http:" && !tls) {
-    const e = new Error(`transport.protocol:${t.protocol}`);
+  const { protocol, ...options } = wireOptions(exact);
+  const tls = protocol === "https:";
+  if (protocol !== "http:" && !tls) {
+    const e = new Error(`transport.protocol:${protocol}`);
     e.code = "transport.protocol";
     throw e;
   }
-  const headers = wireHeaders(exact);
   return new Promise((resolve, reject) => {
     const onResponse = (res) => {
       res.resume();
       res.on("end", () => resolve({ status: res.statusCode }));
     };
-    const options = { hostname: t.hostname, port: t.port, path: t.path, method: exact.method, headers };
     const req = tls
       ? https.request({ ...options, rejectUnauthorized: true }, onResponse)
       : http.request(options, onResponse);
