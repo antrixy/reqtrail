@@ -14,7 +14,7 @@ import { parseWorkspace, selectRequest } from "../src/core/parse.js";
 import { Refusal } from "../src/core/errors.js";
 import { renderResolve } from "../src/cli/render.js";
 
-const EXPECTED = 201;
+const EXPECTED = 205;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -365,6 +365,23 @@ check("normalized secret is flagged without showing it", () => {
 check("unnormalized secret says masked only", () =>
   withSecret("https://a.example/x?k={{$env.API_TOKEN}}", [])
     .provenance[0].produced === "\u2022\u2022\u2022\u2022 (masked)");
+// P-SHOWN-IS-SENT (HONESTY-PATCH-PREREGISTRATION.md D3). A mask stands for
+// bytes that are sent. An empty secret sends nothing, so the projection shows
+// nothing there; the provenance row and the env.empty warning still say a
+// secret was referenced and was empty.
+check("an empty secret adds no mask — nothing is sent there", () => {
+  const r = go(one("https://a.example/x?k={{$env.E}}", [{ name: "A", value: "Bearer {{$env.E}}" }]),
+    { E: "" });
+  return r.projection.url === "https://a.example/x?k=" &&
+    r.projection.headers.filter((h) => h.origin === "workspace")[0].value === "Bearer " &&
+    r.provenance.every((p) => p.secret === true && p.empty === true) &&
+    r.warnings.some((w) => w.code === "env.empty");
+});
+// A secret that normalization turns into a fragment contributes no transmitted
+// byte. 0.4.0 showed `https://a.example/a••••` for a target of `/a`.
+check("a secret that becomes a fragment adds no mask", () =>
+  go(one("https://a.example/a{{$env.T}}"), { T: "#frag" }).projection.url
+    === "https://a.example/a");
 check("P4 no secret in CLI human output", () => {
   const r = run(["resolve", join(root, "examples", "example.reqtrail.json"),
     "--request", "get-user"], { API_TOKEN: SECRET });
@@ -725,6 +742,25 @@ check("the refusal names the code point", () =>
 check("the refusal names the variable that carried it", () =>
   refusal(() => go(one("https://a.example", [{ name: "X", value: "{{v}}" }],
     { v: "a\u007fb" }))).variable === "v");
+// P-CONTAIN, EQUIVALENT FORMS (HONESTY-PATCH-PREREGISTRATION.md D5). A
+// one-character secret named by its code point is the secret in another
+// notation; 0.4.0 printed `"U+0100"` for exactly that. The reference is named,
+// the character is not.
+check("a secret's disallowed character is not named by code point", () => {
+  const d = refusal(() => go(one("https://a.example", [{ name: "X", value: "{{$env.S}}" }]),
+    { S: "\u0100" }));
+  return d.code === "header.charset" && d.variable === "S" &&
+    d.cause.includes("{{$env.S}}") && !d.cause.includes("U+0100") &&
+    d.values.codepoint === undefined;
+});
+// The code point belongs to the variable the message blames. 0.4.0 took the
+// first bad character in the whole header, so a literal before the variable
+// supplied it while the message named the variable.
+check("the code point comes from the variable the refusal names", () => {
+  const d = refusal(() => go(one("https://a.example", [{ name: "X", value: "\u{1F600}{{v}}" }],
+    { v: "\u0100" })));
+  return d.variable === "v" && d.cause.includes("U+0100") && !d.cause.includes("U+1F600");
+});
 check("a tab is accepted — node accepts it", () =>
   go(one("https://a.example", [{ name: "X", value: "a\tb" }])).resolvable === true);
 check("latin-1 is accepted with a warning, not refused", () => {
@@ -931,30 +967,32 @@ check("TRANSPORT-EVIDENCE.md keeps the count v0.3.0 SHIPPED", () => {
   return true;
 });
 
-// THE LIVE DRIFT GUARD, pointed at HTTPS-EVIDENCE.md 2026-09-22.
+// FROZEN 2026-09-23 at 201, the count v0.4.0 shipped. It was the live drift
+// guard, pointed here 2026-09-22.
 //
-// Fourth instance of the same transition. The three above (EVIDENCE-0.1.0.md,
-// BOUNDARY-EVIDENCE.md, TRANSPORT-EVIDENCE.md) each began as a drift guard and
-// had to be frozen once its release shipped — twice discovered by a red check
-// demanding that a PUBLISHED record be edited to a count that release never
-// had. `RELEASE.md` now carries the transition as a release action.
+// FIFTH INSTANCE OF THE CLASS, AND THIS TIME THE PROCEDURE CAUSED IT. RELEASE.md
+// step 2 re-points the drift guard at the releasing version's OWN evidence
+// document, which is published the moment the tag exists. Step 3 then freezes
+// the PREVIOUS guard, not this one. So after every release the live guard is
+// aimed at a published record, and the first check added for the next release
+// turns it red — which is what the first 0.4.1 increment that added selftest
+// checks did. The freeze moved to "the next release" in the comment that sat
+// here, and the next release's first new check arrived before its release.
 //
-// **AT THE NEXT RELEASE: freeze this one to the count that shipped, and leave
-// this guard unpointed until the following evidence document exists.** Do it as
-// part of the release, not when this check turns red.
-//
-// It compares against EXPECTED, the live count, so adding any check to this
-// file requires updating the document. That is the point: a live evidence
-// document that no longer describes the suite is the failure this catches.
-check("HTTPS-EVIDENCE.md quotes this suite's actual count", () => {
+// THE DRIFT GUARD IS UNPOINTED until HONESTY-PATCH-EVIDENCE.md exists. Nothing
+// checks that a live document tracks the suite count in the meantime, which is
+// stated rather than hidden. The procedure change — freeze a release's own
+// guard as the step after tagging, and create the next evidence document with
+// the next pre-registration — is recorded in HONESTY-PATCH-EVIDENCE.md.
+check("HTTPS-EVIDENCE.md keeps the count v0.4.0 SHIPPED", () => {
   const doc = readSource("HTTPS-EVIDENCE.md");
   const quoted = [...doc.matchAll(/selftest\s+(\d+)\/(\d+)/g)].map((m) => Number(m[1]));
   if (quoted.length === 0) {
     throw new Error("HTTPS-EVIDENCE.md quotes no selftest count");
   }
-  const wrong = quoted.filter((n) => n !== EXPECTED);
+  const wrong = quoted.filter((n) => n !== 201);
   if (wrong.length) {
-    throw new Error(`HTTPS-EVIDENCE.md says ${wrong.join(", ")}; the suite is at ${EXPECTED}`);
+    throw new Error(`HTTPS-EVIDENCE.md says ${wrong.join(", ")}; v0.4.0 shipped 201 and is published`);
   }
   return true;
 });

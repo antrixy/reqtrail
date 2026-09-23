@@ -38,7 +38,7 @@ import { TEST_CERT_PATH } from "./tls-receiver.mjs";
 
 // Fixture count tripwire: a fixture that silently stops running would turn this
 // instrument into one that reports "clean" for a path it no longer tests.
-const EXPECTED_FIXTURES = 36;
+const EXPECTED_FIXTURES = 38;
 const EXPECTED_ARGV_FIXTURES = 2;
 
 // After the fix, this file is a regression test: it must exit non-zero while any
@@ -144,6 +144,14 @@ const FIXTURES = [
   ["success path / bidi override in a query variable", ws({ variables: { v: HOSTILE_BIDI }, requests: [req({ url: "https://a.example/?q={{v}}" })] }), {}, "hostile"],
   ["success path / line separator in a query variable", ws({ variables: { v: HOSTILE_LS }, requests: [req({ url: "https://a.example/?q={{v}}" })] }), {}, "hostile"],
 
+  // --- 0.4.1: a secret in an equivalent notation (D5) ---------------------
+  // The marker cannot catch these: the secret never appears as itself. The
+  // equivalent-form check below looks for the code-point notation instead.
+  ["header.charset / secret is one disallowed character", ws({ requests: [req({ headers: [{ name: "A", value: "{{$env.T}}" }] })] }),
+    { T: "\u0100" }, "secret"],
+  ["header.charset / secret carries an emoji after the marker", ws({ requests: [req({ headers: [{ name: "A", value: "{{$env.T}}" }] })] }),
+    { T: `${SECRET}\u{1F4A9}` }, "secret"],
+
   // --- a secret in the derived Host header ------------------------------
   // CARRIED OPEN SINCE 0.3.0. `Host` is not copied from the file, it is DERIVED
   // from the URL, so a secret hostname reaches a header nobody wrote. The
@@ -179,6 +187,18 @@ const norm = (s) => {
   return t.replace(/\\u001b|\\x1b/g, "\u001b");
 };
 const carriesSecret = (out) => norm(out).includes(norm(SECRET));
+// EQUIVALENT FORMS. Output confidentiality is semantic, not substring: a
+// secret's character named as `U+0100` discloses it without its bytes
+// appearing. For every environment value in a secret fixture, the code-point
+// notation of each character outside printable ASCII must be absent.
+// HONESTY-PATCH-PREREGISTRATION.md P-CONTAIN and D5.
+const equivalents = (env) => Object.values(env).flatMap((v) =>
+  [...v].filter((c) => c.codePointAt(0) < 0x20 || c.codePointAt(0) > 0x7e)
+    .map((c) => `u+${c.codePointAt(0).toString(16).padStart(4, "0")}`));
+const carriesEquivalent = (out, env) => {
+  const o = String(out).toLowerCase();
+  return equivalents(env).some((form) => o.includes(form));
+};
 // Independent of src/core/errors.js by construction: Unicode properties, not
 // hand-written ranges. LF and tab are the renderer's own layout.
 const TERMINAL_UNSAFE = /(?![\n\t])[\p{Cc}\p{Bidi_Control}\p{Zl}\p{Zp}]/u;
@@ -247,6 +267,7 @@ for (const [name, fixture, env, kind, extraArg, mode] of FIXTURES) {
   for (const [label, out] of Object.entries(ch)) {
     if (label === "file") continue;
     if (kind === "secret" && carriesSecret(out)) hit.push(`${label}:SECRET`);
+    if (kind === "secret" && carriesEquivalent(out, env)) hit.push(`${label}:SECRET-EQUIVALENT`);
     // Terminal escapes matter on the human channel; the others are consumed by
     // machines, where a control character is data rather than a command.
     if (label === "human" && carriesControl(out)) hit.push(`${label}:CONTROL`);
@@ -273,7 +294,7 @@ for (const [name, argv] of ARGV_FIXTURES) {
 
 const total = FIXTURES.length + ARGV_FIXTURES.length;
 console.log(`\n  ${findings.length} of ${total} fixtures leak`);
-const secretPaths = findings.filter((f) => f.hit.some((h) => h.endsWith("SECRET")));
+const secretPaths = findings.filter((f) => f.hit.some((h) => h.includes("SECRET")));
 const controlPaths = findings.filter((f) => f.hit.some((h) => h.endsWith("CONTROL")));
 console.log(`  secret disclosure:      ${secretPaths.length} paths`);
 console.log(`  terminal escape:        ${controlPaths.length} paths`);
