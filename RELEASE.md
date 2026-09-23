@@ -9,12 +9,19 @@ checklist because it happens outside the repo — in GitHub's UI and on npm — 
 
 ## Before
 
-**1. Bump BOTH version strings.**
+**1. Bump EVERY version string — four, in three files.**
 
-    package.json     "version"
-    src/cli/main.js  VERSION
+    package.json       "version"
+    package-lock.json  "version" AND packages[""].version
+    src/cli/main.js    VERSION
 
-Two files hold one fact. **v0.2.0 shipped a crash message telling users to
+`npm version X.Y.Z --no-git-tag-version` updates the first two files together;
+`src/cli/main.js` is by hand. The lockfile was missed at 0.2.0, 0.3.0 and 0.4.0
+and said 0.1.0 until 0.4.1: `npm ci` accepts the mismatch and `npm pack` leaves
+the lockfile out, so nothing downstream noticed. A selftest check now compares
+it.
+
+Three files hold one fact. **v0.2.0 shipped a crash message telling users to
 report a bug in reqtrail 0.1.0** because only one was bumped. `:881` compares
 `package.json` against what the real binary reports, and a second check pins
 that `bin/reqtrail.js` interpolates `${VERSION}` rather than holding a literal.
