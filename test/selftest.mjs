@@ -14,7 +14,7 @@ import { parseWorkspace, selectRequest, decodeWorkspace } from "../src/core/pars
 import { Refusal } from "../src/core/errors.js";
 import { renderResolve } from "../src/cli/render.js";
 
-const EXPECTED = 220;
+const EXPECTED = 221;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -1097,10 +1097,9 @@ check("HTTPS-EVIDENCE.md keeps the count v0.4.0 SHIPPED", () => {
 // done as the first commit after publishing, for the first time as a planned
 // step rather than discovered by a red check.
 //
-// THE DRIFT GUARD IS UNPOINTED until the next release's pre-registration commit
-// creates its evidence document and points a new live guard at it (RELEASE.md
-// step 2). Until then nothing checks that a live document tracks the suite
-// count; that gap is stated here rather than left silent.
+// THE DRIFT GUARD WAS UNPOINTED from this freeze until the 0.5.0
+// pre-registration commit, which created EXACT-TRANSPORT-EVIDENCE.md and points
+// the live guard there in the check that follows this one (RELEASE.md step 2).
 check("HONESTY-PATCH-EVIDENCE.md keeps the count v0.4.1 SHIPPED", () => {
   const doc = readSource("HONESTY-PATCH-EVIDENCE.md");
   const quoted = [...doc.matchAll(/selftest\s+(\d+)\/(\d+)/g)].map((m) => Number(m[1]));
@@ -1110,6 +1109,31 @@ check("HONESTY-PATCH-EVIDENCE.md keeps the count v0.4.1 SHIPPED", () => {
   const wrong = quoted.filter((n) => n !== 220);
   if (wrong.length) {
     throw new Error(`HONESTY-PATCH-EVIDENCE.md says ${wrong.join(", ")}; v0.4.1 shipped 220 and is published`);
+  }
+  return true;
+});
+
+// THE LIVE DRIFT GUARD, pointed 2026-09-23 at the 0.5.0 evidence document in
+// the same commit that adds EXACT-TRANSPORT-PREREGISTRATION.md (RELEASE.md
+// step 2). Every `selftest N/M` the document quotes must be this suite's
+// current count, both numbers. It is live until v0.5.0 is tagged and published;
+// the first commit after publishing freezes it at the count 0.5.0 shipped
+// (RELEASE.md step 17), exactly as the four checks above were frozen.
+//
+// The document quotes ONLY its own live count. A baseline count belongs in the
+// pre-registration, which this guard does not read — a second number here would
+// make the guard demand that history be rewritten to the current count.
+check("EXACT-TRANSPORT-EVIDENCE.md quotes this suite's live count", () => {
+  const doc = readSource("EXACT-TRANSPORT-EVIDENCE.md");
+  const quoted = [...doc.matchAll(/selftest\s+(\d+)\/(\d+)/g)];
+  if (quoted.length === 0) {
+    throw new Error("EXACT-TRANSPORT-EVIDENCE.md quotes no selftest count");
+  }
+  const wrong = quoted
+    .filter((m) => Number(m[1]) !== EXPECTED || Number(m[2]) !== EXPECTED)
+    .map((m) => m[0].replace(/\s+/g, " "));
+  if (wrong.length) {
+    throw new Error(`EXACT-TRANSPORT-EVIDENCE.md says ${wrong.join(", ")}; the suite is ${EXPECTED}`);
   }
   return true;
 });
