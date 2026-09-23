@@ -26,7 +26,20 @@
 // C0 controls except tab and newline, DEL, and C1. JSON.stringify covers the C0
 // range but leaves DEL and C1 alone, which is why this is not just
 // JSON.stringify: a workspace file can carry either.
-const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g;
+//
+// CR WAS MISSING UNTIL 0.4.1, and this comment said "except tab and newline"
+// the whole time. The range stopped at \u000c and resumed at \u000e, skipping
+// \u000d, so a key like `x\rFAKE: all good` returned the cursor and overwrote
+// the `reqtrail:` prefix. The leak audit could not see it because its oracle
+// was a copy of this regex; it is now written from Unicode properties instead.
+//
+// ALSO ESCAPED SINCE 0.4.1: the bidi controls (U+061C, U+200E-U+200F,
+// U+202A-U+202E, U+2066-U+2069), which reorder the display with no escape
+// sequence, and the line and paragraph separators (U+2028-U+2029).
+// ZWJ and ZWNJ (U+200C-U+200D) are NOT escaped: several scripts and every
+// multi-part emoji need them, and they cannot reorder text.
+// HONESTY-PATCH-PREREGISTRATION.md D2.
+const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069\u2028\u2029]/g;
 
 const hex = (c) => "\\u" + c.codePointAt(0).toString(16).padStart(4, "0");
 
