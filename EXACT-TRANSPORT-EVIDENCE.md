@@ -13,11 +13,11 @@ pre-registration, not here — this document quotes only its own live counts.
 
 ## Counts, live
 
-As of the pre-registration commit: the suite is the baseline's plus one
-selftest check, the drift guard that reads this file. Nothing else has changed.
+As of increment 3: `exact.transport` exists in the core; the transport does
+not read it yet.
 
-    refusals    43/43 carry a literal message
-    selftest    221/221
+    refusals    44/44 carry a literal message
+    selftest    237/237
     leak-audit  0 of 41 fixtures leak, 0 disclosure paths, 0 escape paths
     ui          27/27
     parity      7/7 byte-identical
@@ -61,6 +61,22 @@ Recorded per increment, before the fix lands.
   count one above what runs: `wire` failed "ran 23 checks, expected 24",
   `wire-tls` failed "ran 16 checks, expected 17", both exit 1. Counts unchanged:
   wire 23, wire-tls 16. The summary line keeps its format.
+- **Increment 3, `transportFromHref` (D1).** The sixteen new selftest rows were
+  run against the tree before the change (the increment-2 tree's `url.js` and
+  `prepare.js`): **15 failed**, 14 because `exact.transport` does not exist and
+  the corpus row because a resolved URL had none. **One passed on the
+  baseline, and is recorded as a negative control rather than a bite:**
+  "absent when the URL does not resolve" holds on any build that never builds
+  a transport. It means something only beside the fifteen positive rows.
+  The corpus row did NOT bite as first written — it skipped every case with no
+  transport, so a build with none passed it. Rewritten before landing to
+  require a transport exactly when `urlResolved`; that version fails on the
+  baseline, as recorded above.
+- `url.target.undeterminable` is unreachable by construction and has no row,
+  the same standing as `host.undeterminable`. It is the refusal that moves
+  `enumerate-refusals` from 43 to 44.
+- Spot check toward P5, not its resolution: `resolve` and `resolve --json` on
+  `examples/example.reqtrail.json` are byte-identical to the increment-2 tree.
 
 ## What the pre-registration did not foresee
 
