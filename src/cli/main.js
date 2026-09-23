@@ -34,7 +34,7 @@ import { renderResolve, renderResponse, renderDiagnostics, renderRefusal } from 
 // resolves differently under a bundler than under node, and a version string
 // that is right in one and wrong in the other is worse than a duplicate that a
 // check pins. `test/selftest.mjs` fails if these two disagree.
-export const VERSION = "0.4.0";
+export const VERSION = "0.4.1";
 
 const USAGE = `reqtrail ${VERSION} — see the request before it is sent
 
