@@ -82,6 +82,17 @@ function parse(str, display, path) {
       "the scheme is not http or https; it is not shown because it comes " +
       "from a masked value");
   }
+  // USERINFO IS REFUSED (0.4.1). 0.4.0 displayed `http://user:pw@host/p` and
+  // sent a request with neither the userinfo nor an Authorization header — a
+  // projection showing credentials the wire never carried. Supporting it means
+  // deciding authentication semantics, which is not a patch. The message names
+  // no value: userinfo can come from a secret.
+  // HONESTY-PATCH-PREREGISTRATION.md D4.
+  if (u.username !== "" || u.password !== "") {
+    refuse("url.userinfo", path,
+      "the URL contains userinfo (user:password@); reqtrail does not send it, " +
+      "so it refuses to show it. Put credentials in a header instead");
+  }
   // The fragment is excluded. `new URL()` keeps #frag in href, but fragments
   // are never transmitted — displaying href would show something that is not
   // sent, which is the exact defect this product exists to prevent.
@@ -215,7 +226,9 @@ export function hostFromHref(href, secretRanges, path) {
   const authority = href.slice(authStart, href.indexOf("/", authStart));
   // lastIndexOf("@") + 1 is 0 when there is no userinfo, which is the case we
   // want: the host is the whole authority. Userinfo is excluded because `Host`
-  // carries host and port only.
+  // carries host and port only. Since 0.4.1 `parse()` refuses userinfo, so on a
+  // normalized href this is always 0; the guard stays because the reconstruction
+  // check below depends on it being right, not on the refusal staying put.
   const hostStart = authStart + authority.lastIndexOf("@") + 1;
   const hostEnd = authStart + authority.length;
   const text = href.slice(hostStart, hostEnd);
