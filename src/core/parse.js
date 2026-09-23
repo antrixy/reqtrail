@@ -95,10 +95,14 @@ function isPlainObject(v) {
 // Unknown keys are REFUSED rather than ignored. The asymmetry that governs the
 // variable charset governs this too: relaxing later breaks nothing, and a
 // silently ignored key is a setting the user believes is in effect.
+//
+// A ROOT KEY'S PATH IS THE KEY. `path` is "" at the root, and 0.4.0 joined it
+// with a dot unconditionally, so `oops` was reported as `.oops`.
+// HONESTY-PATCH-PREREGISTRATION.md D8.
 function only(obj, allowed, path) {
   for (const key of Object.keys(obj)) {
     if (!allowed.includes(key)) {
-      refuse("schema.unknown-key", `${path}.${key}`,
+      refuse("schema.unknown-key", path ? `${path}.${key}` : key,
         "unknown key $key; allowed here: $allowed",
         { key, allowed: allowed.join(", ") });
     }
@@ -113,6 +117,32 @@ function str(obj, key, path) {
       { got: v === undefined ? "nothing" : typeof v });
   }
   return v;
+}
+
+// THE FILE IS READ BYTE FOR BYTE. 0.4.0 read it with readFileSync(file,
+// "utf8"), which replaces every malformed sequence with U+FFFD and says
+// nothing: a raw 0x80 in a URL resolved to `http://example.com/%EF%BF%BD`, a
+// request no byte of the file expressed, and several different invalid files
+// collapsed to the same text. For a product that refuses duplicate members
+// because two files must not look the same in silence, silent repair was the
+// same defect one layer down. HONESTY-PATCH-PREREGISTRATION.md D1, P-BYTES.
+//
+// IN THE CORE, NOT THE CLI, so that every consumer of a workspace file decodes
+// it the same way. The CLI calls this once and hands the text to `resolve`,
+// `run` and `ui` alike.
+//
+// `ignoreBOM: true` KEEPS a leading BOM in the text, so JSON.parse refuses it
+// as `schema.json` exactly as 0.4.0 did. Accepting a BOM is a relaxation for a
+// later release: relaxing later breaks no file, tightening later would.
+const STRICT_UTF8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+export function decodeWorkspace(bytes, source = "workspace") {
+  try {
+    return STRICT_UTF8.decode(bytes);
+  } catch {
+    refuse("workspace.encoding", source,
+      "file is not valid UTF-8; reqtrail reads it byte for byte and will not " +
+      "repair it");
+  }
 }
 
 export function parseWorkspace(text, source = "workspace") {
