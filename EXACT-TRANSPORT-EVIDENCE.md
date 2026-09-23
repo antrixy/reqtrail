@@ -13,17 +13,19 @@ pre-registration, not here — this document quotes only its own live counts.
 
 ## Counts, live
 
-As of increment 3: `exact.transport` exists in the core; the transport does
-not read it yet.
+As of increment 4: the transport reads `exact.transport` and parses nothing.
+The wire count is 27 with the IPv6 rows run; where they could not be, it says
+so and where.
 
     refusals    44/44 carry a literal message
-    selftest    237/237
+    selftest    243/243
     leak-audit  0 of 41 fixtures leak, 0 disclosure paths, 0 escape paths
     ui          27/27
     parity      7/7 byte-identical
     server      51/51
     server-slow 2/2
-    wire        23/23
+    wire        27/27 — NOT YET OBSERVED with IPv6 run; this sandbox
+                cannot bind ::1 and ran 25/25 with REQTRAIL_NO_IPV6=1
     wire-tls    16/16
     run-tls     12/12
     mutation    not yet run for this release
@@ -77,6 +79,29 @@ Recorded per increment, before the fix lands.
   `enumerate-refusals` from 43 to 44.
 - Spot check toward P5, not its resolution: `resolve` and `resolve --json` on
   `examples/example.reqtrail.json` are byte-identical to the increment-2 tree.
+- **Increment 4, the transport reads (D2), wire rows, D5.** Run against the
+  increment-3 transport, with `wireOptions` added to it as a shim exposing that
+  transport's own translation under the new name, so the rows could load:
+  - selftest: **4 of the 6 new rows failed** — IPv6 hostname bracketed, bare `?`
+    dropped, https port `""` rather than 443, and `new URL(` present. **Two
+    passed, as expected, and are not bites:** "the connect hostname is not the
+    authority" targets a mutant (increment 7), not the baseline, which got DNS
+    names right; the `.github/` check is a negative that holds on any tree
+    without the variable.
+  - wire: **both P-TARGET rows failed** — the receiver captured `/p`.
+  - wire, IPv6: **not run in this sandbox** (`EAFNOSUPPORT` on `::1`). With the
+    variable unset the suite failed and named it; with it set, the summary said
+    `2 IPv6 rows NOT RUN`. The IPv6 bite and pass (P4) are owed to a machine
+    that binds `::1`, and are recorded here with where they ran.
+  - The two rewritten target rows (D6) pass on the baseline too: their fixture
+    has no bare `?`, so the rewrite removes the shared derivation rather than
+    biting. The P-TARGET rows are what bite.
+  - wire's direct-call guard row failed after D2 with its old input
+    (`TypeError` reading `transport`), and passes with the reshaped input;
+    assertion unchanged. That is the third of P3's three edits.
+- `slice0/receiver.mjs` gained a `host` parameter (default `127.0.0.1`) and now
+  rejects on a failed bind instead of throwing from an event handler. Test
+  infrastructure, outside `src/`.
 
 ## What the pre-registration did not foresee
 
