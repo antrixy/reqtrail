@@ -142,24 +142,41 @@ export function prepareRequest(request, variables, env) {
       refuse("header.control", path,
         "this header value contains CR, LF or NUL");
     }
-    const bad = [...flat].find((ch) => !HEADER_VALUE_OK.test(ch));
+    const isBad = (ch) => !HEADER_VALUE_OK.test(ch);
+    const pointOf = (ch) =>
+      `U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")}`;
+    const bad = [...flat].find(isBad);
     if (bad !== undefined) {
       const culprit = segs.find((seg) =>
         seg.kind !== "literal" && seg.resolved &&
-        [...(seg.secret ? env[seg.key] : seg.value)].some((ch) => !HEADER_VALUE_OK.test(ch)));
-      const point = `U+${bad.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")}`;
+        [...(seg.secret ? env[seg.key] : seg.value)].some(isBad));
+      // A SECRET IS NAMED BY ITS REFERENCE AND NOTHING ELSE. 0.4.0 put the
+      // offending code point in this message, and for a one-character secret
+      // `U+0100` is the whole value in another notation. The leak audit could
+      // not see it: it looked for the secret's bytes, and a code point is not
+      // its bytes. HONESTY-PATCH-PREREGISTRATION.md D5.
+      if (culprit && culprit.secret) {
+        refuse("header.charset", path,
+          "the value of $reference contains a character the transport will " +
+          "not accept; it is not shown because the value is secret. Header " +
+          "values may contain tab, U+0020-U+007E and U+0080-U+00FF",
+          { reference: culprit.written }, culprit.key);
+      }
+      // The code point comes FROM THE CULPRIT'S OWN VALUE. It used to be the
+      // first bad character anywhere in the header, so a literal earlier in
+      // the value could supply it while this message blamed the variable.
       if (culprit) {
         refuse("header.charset", path,
           "the value of $reference contains $codepoint, which the transport " +
           "will not accept: header values may contain tab, U+0020-U+007E and " +
           "U+0080-U+00FF",
-          { reference: culprit.written, codepoint: point },
-          culprit.key ?? culprit.name);
+          { reference: culprit.written, codepoint: pointOf([...culprit.value].find(isBad)) },
+          culprit.name);
       }
       refuse("header.charset", path,
         "this header value contains $codepoint, which the transport will not " +
         "accept: header values may contain tab, U+0020-U+007E and U+0080-U+00FF",
-        { codepoint: point });
+        { codepoint: pointOf(bad) });
     }
 
     // ACCEPTED, and warned about, because it is a display-versus-sent gap

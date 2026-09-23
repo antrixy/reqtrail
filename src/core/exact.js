@@ -33,9 +33,17 @@ import { MASK } from "./url.js";
 // valid. Ranges are half-open, non-overlapping and sorted — `normalizeUrl`
 // refuses overlapping secret ranges rather than masking them together, and
 // header ranges are built by a single left-to-right walk.
+//
+// A ZERO-LENGTH RANGE IS NOT MASKED. A mask stands for bytes that are sent, and
+// an empty range covers none: an empty secret, or a secret that normalization
+// turned into a fragment. 0.4.0 inserted `••••` for both, so the projection
+// showed a secret where the wire carries nothing. The provenance row and the
+// env.empty warning still record that a secret was referenced.
+// HONESTY-PATCH-PREREGISTRATION.md D3.
 export function maskRanges(text, ranges) {
   let out = text;
   for (let i = ranges.length - 1; i >= 0; i--) {
+    if (ranges[i].start === ranges[i].end) continue;
     out = out.slice(0, ranges[i].start) + MASK + out.slice(ranges[i].end);
   }
   return out;
