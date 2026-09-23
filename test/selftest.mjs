@@ -14,7 +14,7 @@ import { parseWorkspace, selectRequest, decodeWorkspace } from "../src/core/pars
 import { Refusal } from "../src/core/errors.js";
 import { renderResolve } from "../src/cli/render.js";
 
-const EXPECTED = 218;
+const EXPECTED = 219;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -407,6 +407,15 @@ check("normalized secret is flagged without showing it", () => {
   return r.provenance[0].produced === "\u2022\u2022\u2022\u2022 (masked, normalized)"
     && !JSON.stringify(r).includes("a%20b");
 });
+// THE MASKED DISPLAY IN A URL REFUSAL. `masked()` in grammar.js renders the URL
+// a refusal quotes, and nothing pinned what it puts in a secret's place: the
+// mutant that rendered the environment KEY there survived every suite until
+// 0.4.1 (found on the first complete mutation run, 2026-09-23). A key is not a
+// secret, so it was not a leak — but the display would no longer be the mask
+// everything else shows.
+check("a URL refusal shows a secret as the mask, not its key", () =>
+  refusal(() => go(one("{{$env.T}}/p"), { T: "not-a-url" })).values.url
+    === '"\u2022\u2022\u2022\u2022/p"');
 check("unnormalized secret says masked only", () =>
   withSecret("https://a.example/x?k={{$env.API_TOKEN}}", [])
     .provenance[0].produced === "\u2022\u2022\u2022\u2022 (masked)");

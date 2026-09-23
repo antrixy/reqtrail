@@ -48,9 +48,14 @@ const MUTANTS = [
     "src/core/grammar.js",
     ': s.secret ? "\\u2022\\u2022\\u2022\\u2022"', ": s.secret ? s.key"],
 
+  // Anchor WIDENED in 0.4.1: `u.hash = "";` occurs twice in url.js (here and in
+  // the attribution probe), and the harness replaces the first match. It hit
+  // the intended site by position alone; the uniqueness check below now
+  // refuses an anchor that matches more than once.
   ["the URL fragment is kept",
     "src/core/url.js",
-    'u.hash = "";', "/* kept */"],
+    'const hadFragment = u.hash !== "";\n  u.hash = "";',
+    'const hadFragment = u.hash !== "";\n  /* kept */'],
 
   // RETARGETED IN 0.4.1. Masking moved from url.js into exact.js's maskRanges
   // at the 0.2.0 boundary split, and this anchor stayed behind: the harness has
@@ -354,10 +359,79 @@ const MUTANTS = [
     "src/cli/main.js",
     "err(renderDiagnostics(result));", "out(renderDiagnostics(result));"],
 
+  // Anchor WIDENED in 0.4.1: the encoding refusal (D1) added an identical
+  // `else err(renderRefusal(...)); return 1;` block EARLIER in main(), so this
+  // mutant silently moved to the new site — it still died, for a different
+  // reason. The trailing brace pins it to the workspace-refusal catch again.
   ["a refusal exits 0",
     "src/cli/main.js",
-    "else err(renderRefusal(e.detail));\n    return 1;",
-    "else err(renderRefusal(e.detail));\n    return 0;"],
+    "else err(renderRefusal(e.detail));\n    return 1;\n  }\n}",
+    "else err(renderRefusal(e.detail));\n    return 0;\n  }\n}"],
+
+  // --- 0.4.1 honesty patch (HONESTY-PATCH-PREREGISTRATION.md increment 8) ---
+  // One mutant per mechanism the patch added, each undoing exactly that fix.
+  // P9 predicted every one is killed on its first run.
+
+  ["D2 — CR is left unescaped again (the 0.4.0 gap at \\u000d)",
+    "src/core/errors.js",
+    "\\u0000-\\u0008\\u000b-\\u001f", "\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f",
+    "killed", "leak-audit.mjs"],
+
+  ["D2 — bidi overrides are left unescaped",
+    "src/core/errors.js",
+    "\\u202a-\\u202e", "", "killed", "leak-audit.mjs"],
+
+  ["D2 — line and paragraph separators are left unescaped",
+    "src/core/errors.js",
+    "\\u2028\\u2029]/g", "]/g", "killed", "leak-audit.mjs"],
+
+  ["P-TERMINAL — a usage error echoes an argument unescaped",
+    "src/cli/main.js",
+    "err(`reqtrail: ${escapeControls(e.message)}\\n\\n${USAGE}`);",
+    "err(`reqtrail: ${e.message}\\n\\n${USAGE}`);", "killed", "leak-audit.mjs"],
+
+  ["P-TERMINAL — an unreadable path is echoed unescaped",
+    "src/cli/main.js",
+    "err(`reqtrail: ${escapeControls(e.message)}\\n`);",
+    "err(`reqtrail: ${e.message}\\n`);", "killed", "leak-audit.mjs"],
+
+  ["D6 — the ui banner echoes the file name unescaped",
+    "src/server/server.js",
+    "serving ${escapeControls(file)} as read", "serving ${file} as read"],
+
+  ["D5 — a secret's disallowed character is named by code point",
+    "src/core/prepare.js",
+    "if (culprit && culprit.secret) {", "if (false) {"],
+
+  ["D5 — the code point comes from the first bad character, not the culprit",
+    "src/core/prepare.js",
+    "codepoint: pointOf([...culprit.value].find(isBad))", "codepoint: pointOf(bad)"],
+
+  ["D3 — a zero-length secret range is masked",
+    "src/core/exact.js",
+    "    if (ranges[i].start === ranges[i].end) continue;\n", ""],
+
+  ["D4 — userinfo is accepted and shown",
+    "src/core/url.js",
+    'if (u.username !== "" || u.password !== "") {', "if (false) {"],
+
+  ["D1 — malformed UTF-8 is repaired instead of refused",
+    "src/core/parse.js",
+    "{ fatal: true, ignoreBOM: true }", "{ fatal: false, ignoreBOM: true }"],
+
+  ["D1 — a BOM is silently stripped (a relaxation the release did not rule)",
+    "src/core/parse.js",
+    "{ fatal: true, ignoreBOM: true }", "{ fatal: true, ignoreBOM: false }"],
+
+  ["D1 — an encoding refusal exits 0",
+    "src/cli/main.js",
+    "else err(renderRefusal(e.detail));\n    return 1;\n  }\n\n  if (opts.command",
+    "else err(renderRefusal(e.detail));\n    return 0;\n  }\n\n  if (opts.command"],
+
+  ["D8 — a root key's path gets its leading dot back",
+    "src/core/parse.js",
+    'refuse("schema.unknown-key", path ? `${path}.${key}` : key,',
+    'refuse("schema.unknown-key", `${path}.${key}`,'],
 ];
 
 const SUITES = ["selftest.mjs", "leak-audit.mjs", "server.mjs",
@@ -406,6 +480,14 @@ for (const [name, file, from, to, expect = "killed", suite = "selftest.mjs"] of 
     const src = readFileSync(path, "utf8");
     if (!src.includes(from)) {
       survivors.push(`${name} — MUTATION DID NOT APPLY (anchor not found in ${file})`);
+      continue;
+    }
+    // AN ANCHOR MUST MATCH ONCE. `replace` edits the first match, so an anchor
+    // that occurs twice mutates whichever site comes first — and a later edit
+    // above the intended site moves the mutant without any failure. Found in
+    // 0.4.1, where it had happened to two mutants.
+    if (src.split(from).length !== 2) {
+      survivors.push(`${name} — ANCHOR NOT UNIQUE (${src.split(from).length - 1} matches in ${file})`);
       continue;
     }
     writeFileSync(path, src.replace(from, to));
