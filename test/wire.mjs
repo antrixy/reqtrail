@@ -16,6 +16,7 @@
 import http from "node:http";
 import net from "node:net";
 import { startReceiver, parseCapture } from "../slice0/receiver.mjs";
+import { startIpv6Receiver } from "./ipv6-receiver.mjs";
 import { __prepareForTest, run } from "../src/core/prepare.js";
 import { send, wireHeaders } from "../src/transport/http.js";
 
@@ -244,7 +245,7 @@ if (NO_IPV6) {
   failures.push(`IPv6: cannot bind ::1 (${bindable}). These ${IPV6_ROWS} rows need it. ` +
     "Set REQTRAIL_NO_IPV6=1 to not run them; the summary will say so.");
 } else {
-  const r6 = await startReceiver("::1");
+  const r6 = await startIpv6Receiver();
   const ws6 = JSON.stringify({ version: 1, variables: {},
     requests: [{ id: "r", name: "n", method: "GET", url: `http://[::1]:${r6.port}/ipv6?`, headers: [] }] });
   const { exact: e6 } = __prepareForTest(ws6, { env: ENV });

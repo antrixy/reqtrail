@@ -23,13 +23,14 @@
 // must mean no request bytes reached the server, secrets included.
 
 import https from "node:https";
+import net from "node:net";
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { __prepareForTest } from "../src/core/prepare.js";
 import { send } from "../src/transport/http.js";
 import { parseCapture } from "../slice0/receiver.mjs";
-import { startTlsReceiver, TEST_CERT_PATH } from "./tls-receiver.mjs";
+import { startTlsReceiver, TEST_CERT_PATH, TEST_IPV6_CERT_PATH } from "./tls-receiver.mjs";
 
 const SELF = fileURLToPath(import.meta.url);
 
@@ -64,7 +65,11 @@ if (process.argv[2] === "--send") {
 // COUNT TRIPWIRE (EXACT-TRANSPORT-PREREGISTRATION.md D7), as in wire.mjs.
 // This file receives the IPv6 TLS rows, and D5 makes a skipped IPv6 row
 // visible only through this number.
-const EXPECTED = 16;
+const EXPECTED = 20;
+
+// IPv6 over TLS (D8), under the same run-or-fail rule as wire.mjs (D5).
+const IPV6_ROWS = 4;
+const NO_IPV6 = process.env.REQTRAIL_NO_IPV6 === "1";
 
 let passed = 0;
 const failures = [];
@@ -154,13 +159,68 @@ const realSent = await childSend(`https://localhost:${real.address().port}`, TRU
 real.close();
 check("W-REAL/TLS a real HTTPS server accepts the request", () => realSent.status === 200);
 
+// ---- IPv6 over TLS (D8) -----------------------------------------------------
+// `send`'s TLS options are unchanged (P7): node sends no SNI for an IP literal
+// and checks the certificate's IP SAN. These rows show verification is still
+// ON for `[::1]` — trusted succeeds, untrusted and wrong-identity both fail
+// with nothing delivered — not merely that a send completes.
+let ipv6NotRun = 0;
+const bindable = NO_IPV6 ? null : await new Promise((res) => {
+  const probe = net.createServer();
+  probe.once("error", (e) => res(e.code ?? "error"));
+  probe.listen(0, "::1", () => probe.close(() => res(true)));
+});
+if (NO_IPV6) {
+  ipv6NotRun = IPV6_ROWS;
+} else if (bindable !== true) {
+  failures.push(`IPv6: cannot bind ::1 (${bindable}). These ${IPV6_ROWS} rows need it. ` +
+    "Set REQTRAIL_NO_IPV6=1 to not run them; the summary will say so.");
+} else {
+  const TRUSTED6 = { NODE_EXTRA_CA_CERTS: TEST_IPV6_CERT_PATH };
+  const r6 = await startTlsReceiver({ ipv6: true });
+  const base6 = `https://[::1]:${r6.port}`;
+  const b6 = r6.captures.length;
+  const sent6 = await childSend(base6, TRUSTED6);
+  const c6 = r6.captures[b6] ? parseCapture(r6.captures[b6]) : null;
+  check("P-ENDPOINT/TLS an IPv6 literal is sent verified: Host bracketed, target intact", () =>
+    sent6.status === 200 && c6 !== null
+    && c6.headers.find((h) => h.name === "Host").value === `[::1]:${r6.port}`
+    && c6.target === "/users/42?q=a%20b");
+  const b7 = r6.captures.length;
+  const untrusted6 = await childSend(base6, {});
+  check("P-VERIFY/IPv6 an untrusted certificate fails and delivers NO request bytes", () =>
+    untrusted6.status === undefined && typeof untrusted6.code === "string"
+    && r6.captures.length === b7);
+  r6.close();
+
+  // Trusted, but the certificate names `localhost`, not `::1`. The identity
+  // check must run for an IP literal and refuse it.
+  const rm = await startTlsReceiver({ ipv6: true, cert: "localhost" });
+  const mismatch6 = await childSend(`https://[::1]:${rm.port}`, TRUSTED);
+  check("P-VERIFY/IPv6 a trusted certificate for another identity fails, NO bytes", () =>
+    mismatch6.code === "ERR_TLS_CERT_ALTNAME_INVALID" && rm.captures.length === 0);
+  rm.close();
+
+  const real6 = https.createServer({
+    key: readFileSync(TEST_IPV6_CERT_PATH.replace("-cert.pem", "-key.pem")),
+    cert: readFileSync(TEST_IPV6_CERT_PATH),
+  }, (q, s) => s.end("ok"));
+  await new Promise((res) => real6.listen(0, "::1", res));
+  const realSent6 = await childSend(`https://[::1]:${real6.address().port}`, TRUSTED6);
+  real6.close();
+  check("W-REAL/TLS/IPv6 a real HTTPS server on ::1 accepts the request", () =>
+    realSent6.status === 200);
+}
+
 if (failures.length) {
   console.error(`FAIL ${failures.length} of ${passed}`);
   for (const f of failures) console.error("  " + f);
 }
-if (passed !== EXPECTED) {
-  console.error(`FAIL count tripwire: ran ${passed} checks, expected ${EXPECTED}`);
+if (passed !== EXPECTED - ipv6NotRun) {
+  console.error(`FAIL count tripwire: ran ${passed} checks, expected ${EXPECTED - ipv6NotRun}`);
   process.exit(1);
 }
 if (failures.length) process.exit(1);
-console.log(`wire-tls ${passed}/${EXPECTED} OK`);
+console.log(ipv6NotRun
+  ? `wire-tls ${passed}/${EXPECTED - ipv6NotRun} OK   (${ipv6NotRun} IPv6 rows NOT RUN: REQTRAIL_NO_IPV6=1)`
+  : `wire-tls ${passed}/${EXPECTED} OK`);

@@ -30,6 +30,13 @@
 //     floor) tries both address families for `localhost`, so a host that
 //     resolves it to ::1 first still reaches 127.0.0.1.
 //   - `https://127.0.0.1:<port>` is the altname-mismatch path.
+//
+// IPv6 (EXACT-TRANSPORT-PREREGISTRATION.md D8). `{ ipv6: true }` binds `::1`.
+// It serves the SECOND fixture, `TEST-ONLY-ipv6-loopback-cert.pem`, which
+// carries `IP:::1` only — unless `cert: "localhost"` is passed, which is the
+// IPv6 altname-mismatch path. The localhost fixture is left byte-identical
+// because the IPv4 mismatch row depends on it naming no IP. A failed bind
+// REJECTS, so a caller can say `::1` was unavailable (D5).
 import tls from "node:tls";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -38,11 +45,15 @@ import { dirname, join } from "node:path";
 const TLS_DIR = join(dirname(fileURLToPath(import.meta.url)), "tls");
 export const TEST_CERT_PATH = join(TLS_DIR, "TEST-ONLY-localhost-cert.pem");
 const TEST_KEY_PATH = join(TLS_DIR, "TEST-ONLY-localhost-key.pem");
+export const TEST_IPV6_CERT_PATH = join(TLS_DIR, "TEST-ONLY-ipv6-loopback-cert.pem");
+const TEST_IPV6_KEY_PATH = join(TLS_DIR, "TEST-ONLY-ipv6-loopback-key.pem");
 
-export function startTlsReceiver() {
+export function startTlsReceiver({ ipv6 = false, cert } = {}) {
+  const useV6Cert = ipv6 && cert !== "localhost";
   const captures = [];
   const server = tls.createServer(
-    { key: readFileSync(TEST_KEY_PATH), cert: readFileSync(TEST_CERT_PATH) },
+    { key: readFileSync(useV6Cert ? TEST_IPV6_KEY_PATH : TEST_KEY_PATH),
+      cert: readFileSync(useV6Cert ? TEST_IPV6_CERT_PATH : TEST_CERT_PATH) },
     (socket) => {
       const chunks = [];
       socket.on("data", (d) => {
@@ -62,8 +73,9 @@ export function startTlsReceiver() {
   // surfaces here. It is the expected outcome of every untrusted row, so it is
   // swallowed here and asserted on the client side.
   server.on("tlsClientError", () => {});
-  return new Promise((res) => {
-    server.listen(0, "127.0.0.1", () =>
+  return new Promise((res, rej) => {
+    server.once("error", rej);
+    server.listen(0, ipv6 ? "::1" : "127.0.0.1", () =>
       res({ port: server.address().port, captures, close: () => server.close() })
     );
   });

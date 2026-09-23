@@ -15,7 +15,7 @@ import { Refusal } from "../src/core/errors.js";
 import { renderResolve } from "../src/cli/render.js";
 import { wireOptions } from "../src/transport/http.js";
 
-const EXPECTED = 243;
+const EXPECTED = 244;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -1574,6 +1574,31 @@ check("the test-only TLS certificate is more than ten years from expiry", () => 
   deadline.setUTCFullYear(deadline.getUTCFullYear() + TLS_FIXTURE_MARGIN_YEARS);
   if (notAfter <= deadline) {
     throw new Error(`test/tls certificate expires ${notAfter.toISOString()}; ` +
+      "regenerate it with the command in test/tls/README.md");
+  }
+  return true;
+});
+
+// THE SECOND TLS FIXTURE, for IPv6 (EXACT-TRANSPORT-PREREGISTRATION.md D8).
+// A separate check rather than a loop in the one above, so that check stays
+// unedited. Same margin, same reason. It also pins the SAN: the IPv6 rows prove
+// identity checking for an IP literal only if this certificate names `::1` and
+// nothing else, and the localhost fixture names no IP.
+check("the IPv6 test certificate names only ::1 and is more than ten years from expiry", () => {
+  const read = (f) => new X509Certificate(readFileSync(join(root, "test", "tls", f)));
+  const v6 = read("TEST-ONLY-ipv6-loopback-cert.pem");
+  const local = read("TEST-ONLY-localhost-cert.pem");
+  if (v6.subjectAltName !== "IP Address:0:0:0:0:0:0:0:1") {
+    throw new Error(`IPv6 fixture SAN is ${JSON.stringify(v6.subjectAltName)}`);
+  }
+  if (local.subjectAltName !== "DNS:localhost") {
+    throw new Error(`localhost fixture SAN is ${JSON.stringify(local.subjectAltName)}`);
+  }
+  const notAfter = new Date(v6.validTo);
+  const deadline = new Date();
+  deadline.setUTCFullYear(deadline.getUTCFullYear() + TLS_FIXTURE_MARGIN_YEARS);
+  if (Number.isNaN(notAfter.getTime()) || notAfter <= deadline) {
+    throw new Error(`IPv6 test certificate expires ${v6.validTo}; ` +
       "regenerate it with the command in test/tls/README.md");
   }
   return true;
