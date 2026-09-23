@@ -54,7 +54,7 @@
 
 import { refuse } from "./errors.js";
 import { segment, allResolved } from "./grammar.js";
-import { normalizeUrl, hostFromHref, MASK } from "./url.js";
+import { normalizeUrl, hostFromHref, transportFromHref, MASK } from "./url.js";
 import { exactFromSegments, project } from "./exact.js";
 // THE TRANSPORT IS IMPORTED, NOT INJECTED, and the choice is worth stating.
 //
@@ -301,6 +301,11 @@ export function prepareRequest(request, variables, env) {
     url: urlView.exact,
     headers: exactHeaders,
   };
+  // The endpoint and target the transport sends to, derived from the same
+  // normalized href as `Host` and ABSENT on the same condition: an unresolved
+  // URL has no href to derive them from, and nothing is sent.
+  // EXACT-TRANSPORT-PREREGISTRATION.md D1. `project()` does not read it.
+  if (urlResolved) exact.transport = transportFromHref(urlView.exact.text, "url");
 
   // THE PAIR, and the two halves are SIBLINGS rather than one nested in the
   // other. An earlier draft returned `{ exact, ...publicFields }`, which is one

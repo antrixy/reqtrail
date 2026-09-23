@@ -261,4 +261,65 @@ export function hostFromHref(href, secretRanges, path) {
   return { text, secretRanges: ranges };
 }
 
+// THE TRANSPORT'S VIEW OF THE URL, derived HERE for the same reason `Host` is:
+// this module owns the one normalization, and the transport must not
+// rediscover endpoint and target from text. 0.4.1's transport re-parsed
+// `exact.url.text` and rebuilt the target as `pathname + search`, which drops a
+// bare `?` (RT-A2), and passed `hostname` through with its IPv6 brackets, which
+// node treats as a DNS name (RT-B2). EXACT-TRANSPORT-PREREGISTRATION.md D1.
+//
+//   authority        between `://` and the next `/` — the same slice
+//                    `hostFromHref` takes, so it is `Host`'s text exactly.
+//   requestTarget    from that `/` to the end. `parse()` already removed the
+//                    fragment, so a bare `?` survives.
+//   connectHostname  the authority without its `:port`, and without the
+//                    brackets of an IPv6 literal. What the socket connects to.
+//   port             a number; 80 or 443 when the normalized href omits it.
+//
+// `url.urlToHttpOptions` is NOT used: it strips the brackets and drops the bare
+// `?`, which would fix RT-B2 by making RT-A2 permanent (measured 2026-09-23).
+//
+// THE RESULT CARRIES PLAINTEXT when a secret is in the host or the target. It
+// goes on the exact request, which is private, and nowhere else. The refusal
+// below names nothing from the URL.
+//
+// VERIFIED BY RECONSTRUCTION, like every attribution here: the slices must
+// concatenate back to `href`, and the hostname and port must agree with the
+// URL API's. Unreachable by construction on a normalized href; kept as an
+// executable statement of the invariant, the `host.undeterminable` pattern.
+export function transportFromHref(href, path) {
+  const u = new URL(href);
+  const protocol = u.protocol;
+  const defaultPort = protocol === "https:" ? 443 : 80;
+  const authStart = href.indexOf("://") + 3;
+  const slash = href.indexOf("/", authStart);
+  const authority = slash === -1 ? "" : href.slice(authStart, slash);
+  const requestTarget = slash === -1 ? "" : href.slice(slash);
+
+  let hostPart;
+  if (authority.startsWith("[")) {
+    hostPart = authority.slice(0, authority.indexOf("]") + 1);
+  } else {
+    const colon = authority.lastIndexOf(":");
+    hostPart = colon === -1 ? authority : authority.slice(0, colon);
+  }
+  const portText = authority.slice(hostPart.length + 1);
+  const connectHostname = hostPart.startsWith("[") ? hostPart.slice(1, -1) : hostPart;
+  const port = portText === "" ? defaultPort : Number(portText);
+
+  const apiHostname = u.hostname.startsWith("[") ? u.hostname.slice(1, -1) : u.hostname;
+  const apiPort = u.port === "" ? defaultPort : Number(u.port);
+  if (slash === -1
+      || protocol + "//" + authority + requestTarget !== href
+      || authority !== u.host
+      || connectHostname !== apiHostname
+      || port !== apiPort
+      || !requestTarget.startsWith("/")) {
+    refuse("url.target.undeterminable", path,
+      "reqtrail cannot determine which bytes of the URL are the host, port and " +
+      "request target, so it cannot say what it would send");
+  }
+  return { protocol, connectHostname, port, authority, requestTarget };
+}
+
 export { MASK };
