@@ -14,7 +14,7 @@ import { parseWorkspace, selectRequest, decodeWorkspace } from "../src/core/pars
 import { Refusal } from "../src/core/errors.js";
 import { renderResolve } from "../src/cli/render.js";
 
-const EXPECTED = 221;
+const EXPECTED = 237;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -1254,6 +1254,84 @@ check("the public view holds no secret bytes although the exact request does", (
     if (JSON.stringify(view).includes(SECRET)) throw new Error(`${label}: secret in view`);
   }
   return true;
+});
+
+// THE EXACT TRANSPORT REQUEST (EXACT-TRANSPORT-PREREGISTRATION.md D1, D6).
+//
+// Every expected value below is a LITERAL. None is computed with the URL API:
+// the wire rows that guarded the target in 0.4.1 computed `pathname + search`,
+// the same expression as the transport, and passed on the defect by
+// construction. An oracle must not share text with what it judges.
+const transportOf = (url, env = {}) =>
+  __prepareForTest(one(url), { env, source: "t.json" }).exact.transport;
+const transportIs = (url, want, env) => {
+  const got = transportOf(url, env);
+  if (!eq(got, want)) throw new Error(`got ${JSON.stringify(got)}`);
+  return true;
+};
+
+check("transport: a bare ? is kept in the target (RT-A2)", () =>
+  transportIs("http://127.0.0.1:8080/p?", { protocol: "http:",
+    connectHostname: "127.0.0.1", port: 8080, authority: "127.0.0.1:8080", requestTarget: "/p?" }));
+check("transport: a bare ? before a dropped fragment is kept", () =>
+  transportOf("http://h.example/p?#frag").requestTarget === "/p?");
+check("transport: a bare ? with no path becomes /?", () =>
+  transportOf("http://h.example?").requestTarget === "/?");
+check("transport: a doubled ? is kept verbatim", () =>
+  transportOf("http://h.example/p??").requestTarget === "/p??");
+check("transport: http with no port connects to 80, authority has no port", () =>
+  transportIs("http://example.com/a", { protocol: "http:",
+    connectHostname: "example.com", port: 80, authority: "example.com", requestTarget: "/a" }));
+check("transport: an explicit :80 is normalized away and still connects to 80", () =>
+  transportIs("http://example.com:80/a", { protocol: "http:",
+    connectHostname: "example.com", port: 80, authority: "example.com", requestTarget: "/a" }));
+check("transport: https with no port connects to 443", () =>
+  transportIs("https://example.com/", { protocol: "https:",
+    connectHostname: "example.com", port: 443, authority: "example.com", requestTarget: "/" }));
+check("transport: https on a non-default port", () =>
+  transportIs("https://example.com:8443/x?y=1", { protocol: "https:",
+    connectHostname: "example.com", port: 8443, authority: "example.com:8443", requestTarget: "/x?y=1" }));
+check("transport: an IPv6 literal connects unbracketed, authority stays bracketed (RT-B2)", () =>
+  transportIs("http://[::1]:8080/ipv6", { protocol: "http:",
+    connectHostname: "::1", port: 8080, authority: "[::1]:8080", requestTarget: "/ipv6" }));
+check("transport: an IPv6 literal on the https default port", () =>
+  transportIs("https://[::1]/p", { protocol: "https:",
+    connectHostname: "::1", port: 443, authority: "[::1]", requestTarget: "/p" }));
+check("transport: an uncompressed IPv6 literal connects to its normalized form", () =>
+  transportOf("http://[0:0:0:0:0:0:0:1]:8080/").connectHostname === "::1");
+check("transport: a numeric IPv4 host connects to its normalized form", () =>
+  transportOf("http://2130706433/").connectHostname === "127.0.0.1");
+check("transport: scheme and host case are normalized, path case is not", () =>
+  transportIs("HTTP://EXAMPLE.com/A", { protocol: "http:",
+    connectHostname: "example.com", port: 80, authority: "example.com", requestTarget: "/A" }));
+check("transport: authority is Host's text, and the pieces rebuild the URL, for every corpus case", () => {
+  for (const [label, text, env] of derivationCorpus) {
+    const { exact, view } = __prepareForTest(text, { env, source: "t.json" });
+    // Present exactly when the URL resolved. Without this the row skipped every
+    // case on a build with no transport at all, and passed on the baseline.
+    if (view.urlResolved !== (exact.transport !== undefined)) {
+      throw new Error(`${label}: transport ${exact.transport ? "present" : "absent"} ` +
+        `but urlResolved is ${view.urlResolved}`);
+    }
+    if (!exact.transport) continue;
+    const host = exact.headers.find((h) => h.origin === "derived").value.text;
+    const t = exact.transport;
+    if (t.authority !== host) throw new Error(`${label}: authority ${t.authority} vs Host ${host}`);
+    if (t.protocol + "//" + t.authority + t.requestTarget !== exact.url.text) {
+      throw new Error(`${label}: pieces do not rebuild the URL`);
+    }
+  }
+  return true;
+});
+check("transport: absent when the URL does not resolve — nothing to send to", () =>
+  transportOf("https://a.example/{{nope}}") === undefined);
+check("transport: a secret host is in the exact transport and in no public field", () => {
+  const env = { H: "secret-host.example" };
+  const { exact, view } = __prepareForTest(one("http://{{$env.H}}:81/p"), { env, source: "t.json" });
+  return exact.transport.connectHostname === "secret-host.example"
+    && exact.transport.port === 81
+    && !JSON.stringify(view).includes("secret-host.example")
+    && !JSON.stringify(view).includes("connectHostname");
 });
 
 check("`exact` never reaches the public result", () => {
