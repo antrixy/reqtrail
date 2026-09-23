@@ -20,7 +20,7 @@
 // THE TEN SERVER PROTECTION ROWS. Choosing node:http over a framework does not
 // remove the need for what a framework provides — it TRANSFERS it here:
 //   1 max header count and size      6 exact route and method matching
-//   2 max JSON body size             7 uniform JSON errors
+//   2 max JSON body size             7 JSON errors from the handler
 //   3 request timeout                8 no stack traces to the browser
 //   4 slow-upload timeout            9 graceful shutdown
 //   5 content-type rejection        10 authenticate before reading a body
@@ -36,7 +36,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { resolveWorkspace } from "../core/prepare.js";
 import { parseWorkspace } from "../core/parse.js";
-import { Refusal, failToStart } from "../core/errors.js";
+import { Refusal, failToStart, escapeControls } from "../core/errors.js";
 
 export const LIMITS = {
   maxHeaderSize: 16 * 1024,   // row 1 — total header block
@@ -73,7 +73,16 @@ function loadAssets() {
   ]);
 }
 
-// Row 7: uniform JSON errors. Row 8: no stack traces, ever.
+// Row 7: every error THIS HANDLER produces is JSON. Row 8: no stack traces to
+// the browser, ever.
+//
+// NARROWED IN 0.4.1. Row 7 read "uniform JSON errors", which is false at the
+// parser boundary: node:http answers some requests before this handler runs —
+// 431 for an oversized header block, 400 for malformed syntax — with a bare
+// status line, no JSON body and none of the headers set below. A `clientError`
+// handler could fake the envelope there; it was rejected, because a new
+// response path at the parser boundary is more surface to make a comment true.
+// HONESTY-PATCH-PREREGISTRATION.md D9.
 function fail(res, status, code, message) {
   const body = Buffer.from(JSON.stringify({ error: { code, message } }));
   res.writeHead(status, {
@@ -328,7 +337,12 @@ export function newToken() {
   // Row 3 (UI): a per-session bearer token, NOT a cookie — cookies are attached
   // cross-site by the browser, which is exactly the property being defended
   // against. Carried in the URL FRAGMENT, which browsers never send to a
-  // server, so it appears in no log and no Referer.
+  // server, so it is in no HTTP request and no Referer.
+  //
+  // NARROWED IN 0.4.1: this said "no log". The banner below PRINTS the token to
+  // the terminal that started the session, so it can sit in scrollback, a
+  // session recording or a CI log for as long as the session lives. The claim
+  // is now about the channels this code controls. HONESTY-PATCH-PREREGISTRATION.md D9.
   return randomBytes(32).toString("base64url");
 }
 
@@ -349,9 +363,15 @@ export async function startUi({ text, file, requestId, env, io = process }) {
   });
   const port = await ui.listen();
 
+  // THE SNAPSHOT IS STATED WHERE IT IS SEEN. The session serves the text it was
+  // started with, for its whole lifetime; an edit to the file does not reach
+  // it. Known since the 0.2.0 planning handoff, which ruled that the copy must
+  // say so, and said nowhere a user would look until 0.4.1. The file name is
+  // an argument, so it is escaped like one. HONESTY-PATCH-PREREGISTRATION.md D6.
   io.stdout.write(
     `reqtrail ui — read only, nothing is sent\n` +
     `  http://127.0.0.1:${port}/#token=${token}\n` +
+    `  serving ${escapeControls(file)} as read at startup · restart after editing it\n` +
     `  bound to 127.0.0.1 only · session token expires when this process does\n` +
     `  Ctrl-C to stop\n`);
 
