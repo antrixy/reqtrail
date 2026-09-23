@@ -14,7 +14,7 @@ import { parseWorkspace, selectRequest } from "../src/core/parse.js";
 import { Refusal } from "../src/core/errors.js";
 import { renderResolve } from "../src/cli/render.js";
 
-const EXPECTED = 205;
+const EXPECTED = 208;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -552,8 +552,21 @@ check("Host omits a default port", () =>
   host(go(one("https://a.example:443/p")))[0].value === "a.example");
 check("Host KEEPS a non-default port", () =>
   host(go(one("http://a.example:8080/p")))[0].value === "a.example:8080");
-check("Host excludes userinfo — it carries host and port only", () =>
-  host(go(one("http://user:pw@a.example/p")))[0].value === "a.example");
+// REWRITTEN IN 0.4.1, not relaxed. This check used to assert that `Host`
+// excluded userinfo from `http://user:pw@a.example/p` — true, and beside the
+// point: the projection showed `user:pw@` and the transport sent neither the
+// userinfo nor an Authorization header. Its input class is now refused, so
+// the check follows the input (rule 9e). HONESTY-PATCH-PREREGISTRATION.md D4.
+check("userinfo is refused — it would be shown and not sent", () =>
+  refusal(() => go(one("http://user:pw@a.example/p"))).code === "url.userinfo");
+check("a username alone is refused too", () =>
+  refusal(() => go(one("http://user@a.example/p"))).code === "url.userinfo");
+check("a secret password is refused without naming it", () => {
+  const d = refusal(() => go(one("https://u:{{$env.T}}@a.example/p"), { T: "pw-9f3e" }));
+  return d.code === "url.userinfo" && !JSON.stringify(d).includes("pw-9f3e");
+});
+check("an empty userinfo marker is not userinfo — the parser drops it", () =>
+  go(one("http://@a.example/p")).projection.url === "http://a.example/p");
 check("Host is ABSENT when the URL does not resolve", () =>
   host(go(one("{{nope}}/p"))).length === 0);
 check("a secret in the hostname is MASKED in Host", () => {

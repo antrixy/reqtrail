@@ -38,7 +38,7 @@ import { TEST_CERT_PATH } from "./tls-receiver.mjs";
 
 // Fixture count tripwire: a fixture that silently stops running would turn this
 // instrument into one that reports "clean" for a path it no longer tests.
-const EXPECTED_FIXTURES = 38;
+const EXPECTED_FIXTURES = 39;
 const EXPECTED_ARGV_FIXTURES = 2;
 
 // After the fix, this file is a regression test: it must exit non-zero while any
@@ -103,6 +103,8 @@ const FIXTURES = [
     { T: `scheme${SECRET}` }, "secret"],
   ["url.secret.undisplayable", ws({ requests: [req({ url: "https://a.example/{{$env.T}}" })] }),
     { T: `a/../b${SECRET}` }, "secret"],
+  ["url.userinfo / secret is the password", ws({ requests: [req({ url: "https://u:{{$env.T}}@a.example/" })] }),
+    { T: SECRET }, "secret"],
   ["grammar.nested / env value holds a template", ws({ requests: [req({ url: "https://a.example/{{$env.T}}" })] }),
     { T: `{{x}}${SECRET}` }, "secret"],
   ["header.control / secret holds CRLF", ws({ requests: [req({ headers: [{ name: "A", value: "{{$env.T}}" }] })] }),

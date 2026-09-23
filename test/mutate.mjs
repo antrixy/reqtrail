@@ -52,9 +52,13 @@ const MUTANTS = [
     "src/core/url.js",
     'u.hash = "";', "/* kept */"],
 
+  // RETARGETED IN 0.4.1. Masking moved from url.js into exact.js's maskRanges
+  // at the 0.2.0 boundary split, and this anchor stayed behind: the harness has
+  // reported it as MUTATION DID NOT APPLY since then, and no run finished to
+  // show it. Same mutant, in the one place masking now happens.
   ["secret byte ranges in the URL are not masked",
-    "src/core/url.js",
-    "for (let i = secretRanges.length - 1; i >= 0; i--) {",
+    "src/core/exact.js",
+    "for (let i = ranges.length - 1; i >= 0; i--) {",
     "for (let i = -1; i >= 0; i--) {"],
 
   // EQUIVALENT. `produced` is sliced out of `href` between an offset proved by
@@ -126,7 +130,8 @@ const MUTANTS = [
 
   ["header values are not checked against the transport's set",
     "src/core/prepare.js",
-    "const bad = [...flat].find((ch) => !HEADER_VALUE_OK.test(ch));",
+    // Anchor moved in 0.4.1 (D5 named the predicate `isBad`).
+    "const bad = [...flat].find(isBad);",
     "const bad = undefined;",
     "killed", "selftest.mjs"],
 
@@ -189,10 +194,12 @@ const MUTANTS = [
     "} catch { safeScheme = null; }",
     "} catch { safeScheme = new URL(str).protocol.slice(0, -1); }", "killed", "leak-audit.mjs"],
 
+  // RETARGETED IN 0.4.1. The line became `const line = ...` when 0.3.0 added
+  // the (derived) marker, and the anchor has not matched since.
   ["rendered header values are not escaped",
     "src/cli/render.js",
-    "lines.push(`${esc(h.name)}: ${esc(h.value)}`);",
-    "lines.push(`${h.name}: ${h.value}`);", "killed", "leak-audit.mjs"],
+    "const line = `${esc(h.name)}: ${esc(h.value)}`;",
+    "const line = `${h.name}: ${h.value}`;", "killed", "leak-audit.mjs"],
 
 
   // ---- the loopback server: seventeen rows, previously unmutated ----------
