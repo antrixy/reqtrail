@@ -21,7 +21,7 @@
 
 import { readFileSync } from "node:fs";
 import { resolveWorkspace, run } from "../core/prepare.js";
-import { Refusal, StartupFailure } from "../core/errors.js";
+import { Refusal, StartupFailure, escapeControls } from "../core/errors.js";
 import { renderResolve, renderResponse, renderDiagnostics, renderRefusal } from "./render.js";
 
 // ONE SOURCE OF TRUTH, ENFORCED. This constant and `package.json`'s `version`
@@ -105,7 +105,9 @@ export async function main(argv, io = process) {
     opts = parseArgs(argv);
   } catch (e) {
     if (!(e instanceof Usage)) throw e;
-    err(`reqtrail: ${e.message}\n\n${USAGE}`);
+    // Escaped: the message echoes an argument, and an argument can come from a
+    // script that did not write it. HONESTY-PATCH-PREREGISTRATION.md P-TERMINAL.
+    err(`reqtrail: ${escapeControls(e.message)}\n\n${USAGE}`);
     return 2;
   }
 
@@ -122,7 +124,7 @@ export async function main(argv, io = process) {
   try {
     text = read(opts.file);
   } catch (e) {
-    err(`reqtrail: ${e.message}\n`);
+    err(`reqtrail: ${escapeControls(e.message)}\n`);
     return 2;
   }
 
