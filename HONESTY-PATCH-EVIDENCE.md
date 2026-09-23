@@ -1,8 +1,9 @@
 # 0.4.1 honesty patch — evidence
 
-**Complete in the repo; the browser sitting and the release steps outside the
-repo are PENDING** (bottom of this file). Eleven predictions are resolved
-below; **one is falsified and kept with its original wording.**
+**Released 2026-09-23 as `reqtrail@0.4.1`**, tagged `v0.4.1` on
+`2a85d12fafe56d9e524a4db0f6b7d6f9c3998249`. Eleven predictions are resolved
+below; **one is falsified and kept with its original wording.** The release
+steps outside the repo are recorded at the bottom, each with what was observed.
 
 Pre-registration: `HONESTY-PATCH-PREREGISTRATION.md`, Section 4 frozen and
 untouched since `a154493`. Baseline `bb0b6034ca6b748d756baed96c05ff5dc6b8bd18`
@@ -239,7 +240,7 @@ codeload archive and a clean `npm test`.
 - **The sitting ran on Node 24; CI runs only Node 22.** The engine range is
   `>=22` with no upper bound and no matrix — the review's RT-B6 runtime item.
 
-## Release steps outside the repo — PENDING
+## Release steps outside the repo — DONE
 
 Following `RELEASE.md`. Each line is filled in when the step is done, with
 what was observed.
@@ -274,14 +275,43 @@ what was observed.
   **The sitting's result stands for the tagged tree.** The commits after
   `fcafe17` change `--help` text, the README, a selftest check and this file;
   none touches `src/ui/`, `src/server/` or the sitting.
-- **Step 6, surfaces no check reads**: the About text reads "…before
-  anything is sent", which is false for `run` in the same way as the help text
-  above. Change it in the repository settings to a sentence that names no
-  order for `run`: PENDING.
-- **Steps 9–11, tag `v0.4.1`** on the commit that records the sitting (the one
-  carrying this line), verified by sha: PENDING.
-- **Steps 12–13, publish**: PENDING.
-- **Steps 14–15, registry tarball diffed against the tag; published binary
-  run**: PENDING.
-- **Step 17, freeze this document's drift guard** at the count 0.4.1 ships:
-  PENDING, as the first commit after publishing.
+- **Step 6, surfaces no check reads: DONE.** The About text read "…before
+  anything is sent", false for `run` in the same way as the help text above. It
+  now reads: "Shows the HTTP request it hands to the transport — method, URL,
+  headers — and where every substituted value came from. resolve never sends;
+  run sends and reports the status. Local-first, plain JSON workspaces, CLI
+  plus a loopback web UI." Read back from the public page after saving.
+- **Step 7–8, release notes: DONE.** Every sample was captured from the binary
+  at `2a85d12`, and each claim was checked against that tree, including the
+  "still true in 0.4.1" list (`src/transport/http.js` is unchanged since 0.4.0,
+  where those behaviours were measured).
+- **Steps 9–11, tag: DONE.** Before creating it, raw.githubusercontent returned
+  404 for `v0.4.1` and `main` was `2a85d12`. After: the tags page and the
+  release page both resolve `v0.4.1` to `2a85d12`; a cache-busted
+  raw.githubusercontent LOOKUP of `src/core/prepare.js`, `src/cli/main.js`,
+  this file, `README.md` and `package.json` matched `2a85d12` byte for byte;
+  VERIFICATION is the sha-pinned codeload archive of `2a85d12` (sha256
+  `f2f1515a510af63238c8c9caeea87829b00522eae6e32d02fd2f7ae6b070498e`), on which
+  a clean `npm test` passed in full.
+- **Steps 12–13, publish: DONE.** The `publish` workflow ran from `main` at
+  `2a85d12` in 1m 20s and printed `+ reqtrail@0.4.1`. Tarball: 33 files,
+  shasum `0b43b4213dd3e31a106c49f8b0f0a327cb66306f`, provenance statement at
+  sigstore log index 2924119739.
+- **Step 14, registry tarball against the tag: DONE.** `npm view` returned the
+  same shasum; the downloaded tarball's sha1 matches it. Of its 33 files, **28
+  are byte-identical to the tag**, and the other 5 are the built `dist/` files
+  (gitignored, so not in any tag). Those 5 are byte-identical to a local
+  `build:ui` of the tag with the locked esbuild 0.28.2, so the UI bundle is
+  reproducible from the tagged source.
+- **Step 15, the published binary: DONE.** `npm install reqtrail@0.4.1` in an
+  empty directory, then: `--version` printed `0.4.1`; a userinfo URL refused
+  with `[url.userinfo]`, exit 1; an invalid-UTF-8 file refused with
+  `[workspace.encoding]`, exit 1; `--help` says run "sends it over http or
+  https, then shows it with the response status".
+- **Step 17, freeze this document's drift guard: DONE**, in the first commit
+  after publishing, at 220. The live guard is unpointed until the next
+  pre-registration.
+- **Still on npm and not editable**: the 0.3.0 and 0.4.0 pages carry the README
+  saying `run` does not exist. This file is not in the tarball (`package.json`
+  `files` ships only slice 0's evidence), so at the tag it reads PENDING for the
+  steps above and this record lives on `main`.
