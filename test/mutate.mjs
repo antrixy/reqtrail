@@ -174,7 +174,9 @@ const MUTANTS = [
 
   ["DEL and C1 are left unescaped",
     "src/core/errors.js",
-    "\\u007f-\\u009f]/g;", "]/g;", "killed", "leak-audit.mjs"],
+    // Anchor moved in 0.4.1: the class no longer ends at C1 (D2 added CR,
+    // bidi controls and separators after it). Same mutant, same expectation.
+    "\\u007f-\\u009f\\u061c", "\\u061c", "killed", "leak-audit.mjs"],
 
   ["the url refusal names the raw url instead of the masked one",
     "src/core/url.js",
