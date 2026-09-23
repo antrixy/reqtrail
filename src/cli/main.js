@@ -44,9 +44,9 @@ const USAGE = `reqtrail ${VERSION} — see the request before it is sent
   reqtrail --version
   reqtrail --help
 
-resolve shows the request and never sends it. run shows it and then sends it,
-over http or https. A certificate that cannot be verified is exit 3, and
-verification cannot be turned off.
+resolve shows the request and never sends it. run sends it over http or
+https, then shows it with the response status. A certificate that cannot be
+verified is exit 3, and verification cannot be turned off.
 
 Exit codes: 0 resolved, or sent and answered · 1 refused or unresolved
 · 2 usage · 3 send attempted and failed.
