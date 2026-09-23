@@ -26,6 +26,10 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # A hang in the transport has no deadline yet (the execution release adds
+    # one), so without this a stuck run holds a runner for GitHub's default of
+    # six hours. The suite takes well under two minutes. D11.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 

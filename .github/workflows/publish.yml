@@ -15,6 +15,9 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # The suite runs here too (and again at prepack), with the same exposure to
+    # a transport hang as the test workflow. D11.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
 
