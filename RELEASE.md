@@ -19,17 +19,23 @@ report a bug in reqtrail 0.1.0** because only one was bumped. `:881` compares
 `package.json` against what the real binary reports, and a second check pins
 that `bin/reqtrail.js` interpolates `${VERSION}` rather than holding a literal.
 
-**2. Write the release's evidence document** and re-point the drift guard in
-`test/selftest.mjs` at it.
+**2. The release's evidence document already exists** — it is created in the
+same commit as the release's pre-registration, and the live drift guard in
+`test/selftest.mjs` is pointed at it then. Here, bring its counts up to date.
 
-**3. Freeze the OUTGOING drift guard** at the count the previous release
-shipped.
+**3. Do not freeze anything yet.** The live guard stays aimed at this release's
+evidence document until the tag exists. Freezing it is step 17.
 
-This has bitten three times — `EVIDENCE-0.1.0.md`, `BOUNDARY-EVIDENCE.md`,
-`TRANSPORT-EVIDENCE.md`. **A drift guard aimed at a published document demands
-that the document be edited to a count that release never had.** The guard is
-right until the tag exists and wrong the instant after, so freezing it is a
-release action, not a repair.
+**A drift guard aimed at a published document demands that the document be
+edited to a count that release never had.** The guard is right until the tag
+exists and wrong the instant after. This has bitten five times —
+`EVIDENCE-0.1.0.md`, `BOUNDARY-EVIDENCE.md`, `TRANSPORT-EVIDENCE.md`, and
+`HTTPS-EVIDENCE.md`, which was found by the first 0.4.1 increment that added a
+check. **The old steps caused the fifth:** step 2 pointed the live guard at the
+releasing version's OWN evidence document, and step 3 froze only the previous
+release's guard, so every publish left a live guard aimed at a published
+record. Fixed 2026-09-23 by moving the freeze to step 17 and the evidence
+document to the start of the next release.
 
 **4. `npm test` on a CLEAN checkout**, not on the machine you have been building
 on. `prepack` runs it again during publish; both matter.
@@ -119,3 +125,8 @@ command exercising whatever the release added.
 
 **16. Write the handoff in the sitting.** **v0.2.0's publish left no record and
 had to be reconstructed off npm four days afterwards.**
+
+**17. Freeze this release's drift guard** at the count it shipped, as the first
+commit after publishing. The guard is then unpointed until the next release's
+pre-registration commit creates the next evidence document and points a new
+live guard at it — so the gap between releases is visible, not silent.

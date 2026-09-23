@@ -47,8 +47,9 @@ reqtrail added, and the display is not quietly claiming you wrote it. A
 workspace that sets `Host` itself is refused rather than merged: two would be a
 request-smuggling shape.
 
-`reqtrail ui example.reqtrail.json` opens the same view in a browser. **It is
-read only and has no send button** — sending is the CLI's job, and a page in a
+`reqtrail ui example.reqtrail.json` prints a local URL that opens the same view
+in a browser. **It reads the file once, when it starts: restart it after
+editing the file.** **It is read only and has no send button** — sending is the CLI's job, and a page in a
 browser that can make your machine emit authenticated requests is a larger
 security question than this tool has answered.
 
@@ -202,8 +203,10 @@ so `--json` stays parseable.
 ## `reqtrail ui`
 
 A local page served by the CLI. It binds `127.0.0.1` only, on a random port,
-behind a per-session token carried in the URL fragment so it reaches no log and
-no `Referer`. It requires an exact `Origin` and `Host` on every API request,
+behind a per-session token carried in the URL fragment, so it is never sent in
+an HTTP request or a `Referer`. The token is printed to the terminal that
+started the session, so it can appear in that terminal's scrollback or in a
+captured log while the session runs. It requires an exact `Origin` and `Host` on every API request,
 sends no CORS headers, and dies with the terminal that started it.
 
 Those are not hardening. `reqtrail ui` is by construction a local service
@@ -215,7 +218,8 @@ ran; see [`EVIDENCE-0.1.0.md`](https://github.com/antrixy/reqtrail/blob/main/EVI
 
 ## What is not here
 
-`run` · sending anything · responses · timeouts · redirects · `--as-curl` ·
+response bodies and headers (`run` reports the status) · a send timeout ·
+redirects · `--as-curl` ·
 `init` · POST and other verbs · request bodies · environment files · `--var`
 overrides · imports · a request builder.
 
