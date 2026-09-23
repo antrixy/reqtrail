@@ -117,16 +117,37 @@ const unres = await run(JSON.stringify({ version: 1, variables: {},
 check("run sends NOTHING when a reference is unresolved", () =>
   unres.sent === false && unres.response === undefined && unres.transport === undefined);
 
-// A secret hostname that cannot resolve. node puts the hostname in the error
-// PROSE — `getaddrinfo ENOTFOUND ...` — so this is the row that proves the
-// reduction to a bare code is doing something.
+// A secret target that refuses the connection. node puts the target in the
+// error PROSE — `connect ECONNREFUSED 127.0.0.1:<port>` — so this is the row
+// that proves the reduction to a bare code is doing something.
+//
+// HERMETIC SINCE 0.4.1. This row used `secret-host.invalid` and expected
+// ENOTFOUND. A reserved name stops ordinary resolution; it does not stop a
+// resolver or proxy from answering, and on 2026-09-23 an independent reviewer's
+// environment returned HTTP 502 for it — sent: true, and this row failed with no
+// defect in reqtrail. The property is unchanged; the input no longer depends on
+// the machine's DNS. The ENOTFOUND class returns with an injected resolver in
+// the execution release. HONESTY-PATCH-PREREGISTRATION.md D10.
+const closed = http.createServer();
+await new Promise((res) => closed.listen(0, "127.0.0.1", res));
+const BADHOST = `127.0.0.1:${closed.address().port}`;
+await new Promise((res) => closed.close(res));
+// The row only means something if node really does put the target in its
+// prose. Measured here rather than assumed, against the same closed port.
+const prose = await new Promise((res) => {
+  const q = http.request(`http://${BADHOST}/p`);
+  q.on("error", (e) => res(e.message));
+  q.end();
+});
+check("node's own error message carries the target — the row can fail", () =>
+  prose.includes(BADHOST));
 const bad = await run(JSON.stringify({ version: 1, variables: {},
   requests: [{ id: "r", name: "n", method: "GET", url: "http://{{$env.BADHOST}}/p",
-    headers: [] }] }), { env: { ...ENV, BADHOST: "secret-host.invalid" } });
+    headers: [] }] }), { env: { ...ENV, BADHOST } });
 check("a failed send reports a CODE", () =>
-  bad.sent === false && bad.transport.code === "ENOTFOUND");
-check("a failed send does not leak the hostname node put in its message", () =>
-  !JSON.stringify(bad).includes("secret-host.invalid"));
+  bad.sent === false && bad.transport.code === "ECONNREFUSED");
+check("a failed send does not leak the target node put in its message", () =>
+  !JSON.stringify(bad).includes(BADHOST));
 
 // `run` REFUSING `https` WAS RETIRED 2026-09-22 (HTTPS-PREREGISTRATION D3).
 // Two rows lived here: "run REFUSES https rather than reporting a transport

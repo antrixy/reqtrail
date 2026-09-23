@@ -14,7 +14,7 @@ import { parseWorkspace, selectRequest, decodeWorkspace } from "../src/core/pars
 import { Refusal } from "../src/core/errors.js";
 import { renderResolve } from "../src/cli/render.js";
 
-const EXPECTED = 217;
+const EXPECTED = 218;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -1085,6 +1085,20 @@ check("EVIDENCE-0.1.0.md records P4 as falsified, not as held", () => {
 check("the version in package.json is the version the CLI reports", () => {
   const pkg = JSON.parse(readSource("package.json"));
   return pkg.version === run(["--version"]).stdout.trim();
+});
+
+// THE THIRD FILE. package-lock.json carries the version twice — its root and
+// packages[""] — and both said 0.1.0 through 0.2.0, 0.3.0 and 0.4.0 while
+// every check here compared only package.json and the CLI. `npm ci` accepts
+// the mismatch and `npm pack` omits the lockfile, so no install or tarball
+// check could see it. HONESTY-PATCH-PREREGISTRATION.md D7.
+check("package-lock.json carries package.json's version in both places", () => {
+  const v = JSON.parse(readSource("package.json")).version;
+  const lock = JSON.parse(readSource("package-lock.json"));
+  if (lock.version !== v || lock.packages[""].version !== v) {
+    throw new Error(`lockfile says ${lock.version} and ${lock.packages[""].version}; package.json says ${v}`);
+  }
+  return true;
 });
 
 check("no check in this suite is silenced with an always-true clause", () => {
