@@ -5,7 +5,8 @@
 `reqtrail resolve` reads a workspace file and shows you the request it would
 hand to the transport — method, URL, headers — together with where every
 substituted value came from and what happened to it on the way. `reqtrail run`
-shows you the same thing and then sends it.
+sends it, then shows you the same thing with the response status — so to see a
+request without sending it, use `resolve`.
 
 **`resolve` sends nothing, ever.** That is not a limit of a version; it is what
 the verb means. Nothing leaves your machine until you type `run`.

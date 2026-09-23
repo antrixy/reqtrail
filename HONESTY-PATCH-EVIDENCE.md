@@ -51,6 +51,8 @@ to 0.4.0.
 - **The UI says it is a snapshot**, in the startup banner, the page header and
   the README. It serves the file as it was at startup.
 - **Root-level refusal paths lose their leading dot**: `oops`, not `.oops`.
+- **`--help` and the README no longer say `run` shows the request before
+  sending it.** It never did: `run` awaits the send and prints afterwards.
 
 **Two workspaces that resolved under 0.4.0 now refuse** — userinfo URLs and
 invalid UTF-8. D0 ruled this a bug fix, because both were being processed into
@@ -168,6 +170,21 @@ now 75/75.
   now also looks for the `U+XXXX` notation of every non-ASCII character in a
   secret fixture's environment.
 
+**The release's own surface check found `run`'s help text false — and a check
+holding it in place.** `--help` said "run shows it and then sends it" and the
+README said `run` "shows you the same thing and then sends it". Both describe
+the order the product claims, not the order it has: `run` awaits the send and
+prints the request afterwards, which is the review's RT-A1, fixed in the
+execution release. The selftest check "help says nothing is sent" **required
+the literal false sentence**, so correcting the text turned it red — the same
+shape as the `0.1.0 sends nothing` pin. It now pins "resolve shows the request
+and never sends it.", which is what its name meant, and names no order for
+`run`, so the execution release can reorder `run` without meeting a guard
+against the correction. This is a third existing check with its assertion
+changed; P3 was already falsified, and this does not change the verdict. Found
+by reading the GitHub About text for step 6, which says the request is shown
+"before anything is sent".
+
 **The lockfile said 0.1.0 through three releases.** `npm ci` accepts the
 mismatch and `npm pack` leaves the lockfile out, so no install or tarball check
 could see it. `RELEASE.md` step 1 now lists four version strings in three
@@ -253,7 +270,14 @@ what was observed.
   and only `npm test`'s `pretest` builds it. The first attempt also ran in an old
   `reqtrail-0.4.0` checkout, whose sitting has no F8. `RELEASE.md` step 5 now
   gives the build step, a real macOS path, and the release-tree requirement.
-- **Step 6, surfaces no check reads** (GitHub About sidebar): PENDING.
+
+  **The sitting's result stands for the tagged tree.** The commits after
+  `fcafe17` change `--help` text, the README, a selftest check and this file;
+  none touches `src/ui/`, `src/server/` or the sitting.
+- **Step 6, surfaces no check reads**: the About text reads "…before
+  anything is sent", which is false for `run` in the same way as the help text
+  above. Change it in the repository settings to a sentence that names no
+  order for `run`: PENDING.
 - **Steps 9–11, tag `v0.4.1`** on the commit that records the sitting (the one
   carrying this line), verified by sha: PENDING.
 - **Steps 12–13, publish**: PENDING.
