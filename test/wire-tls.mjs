@@ -61,6 +61,11 @@ if (process.argv[2] === "--send") {
 }
 
 // ---- PARENT -----------------------------------------------------------------
+// COUNT TRIPWIRE (EXACT-TRANSPORT-PREREGISTRATION.md D7), as in wire.mjs.
+// This file receives the IPv6 TLS rows, and D5 makes a skipped IPv6 row
+// visible only through this number.
+const EXPECTED = 16;
+
 let passed = 0;
 const failures = [];
 const check = (name, fn) => {
@@ -152,6 +157,10 @@ check("W-REAL/TLS a real HTTPS server accepts the request", () => realSent.statu
 if (failures.length) {
   console.error(`FAIL ${failures.length} of ${passed}`);
   for (const f of failures) console.error("  " + f);
+}
+if (passed !== EXPECTED) {
+  console.error(`FAIL count tripwire: ran ${passed} checks, expected ${EXPECTED}`);
   process.exit(1);
 }
-console.log(`wire-tls ${passed}/${passed} OK`);
+if (failures.length) process.exit(1);
+console.log(`wire-tls ${passed}/${EXPECTED} OK`);

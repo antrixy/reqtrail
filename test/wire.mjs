@@ -18,6 +18,12 @@ import { startReceiver, parseCapture } from "../slice0/receiver.mjs";
 import { __prepareForTest, run } from "../src/core/prepare.js";
 import { send, wireHeaders } from "../src/transport/http.js";
 
+// COUNT TRIPWIRE (EXACT-TRANSPORT-PREREGISTRATION.md D7). A row that stops
+// running — an early exit, a skipped branch, a check deleted in passing —
+// used to be invisible here: the summary printed whatever ran, over itself.
+// It lands before 0.5.0 adds any row, so every new row moves this number.
+const EXPECTED = 23;
+
 let passed = 0;
 const failures = [];
 const check = (name, fn) => {
@@ -195,6 +201,10 @@ check("W-REAL a real HTTP/1.1 server accepts the request", () => status === 200)
 if (failures.length) {
   console.error(`FAIL ${failures.length} of ${passed}`);
   for (const f of failures) console.error("  " + f);
+}
+if (passed !== EXPECTED) {
+  console.error(`FAIL count tripwire: ran ${passed} checks, expected ${EXPECTED}`);
   process.exit(1);
 }
-console.log(`wire ${passed}/${passed} OK`);
+if (failures.length) process.exit(1);
+console.log(`wire ${passed}/${EXPECTED} OK`);
