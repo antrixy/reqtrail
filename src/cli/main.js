@@ -21,6 +21,7 @@
 
 import { readFileSync } from "node:fs";
 import { resolveWorkspace, run } from "../core/prepare.js";
+import { decodeWorkspace } from "../core/parse.js";
 import { Refusal, StartupFailure, escapeControls } from "../core/errors.js";
 import { renderResolve, renderResponse, renderDiagnostics, renderRefusal } from "./render.js";
 
@@ -88,9 +89,11 @@ function parseArgs(argv) {
   return opts;
 }
 
+// BYTES, not text. Decoding is the core's (decodeWorkspace), so a file that
+// is not valid UTF-8 refuses instead of being silently repaired here.
 function read(file) {
   try {
-    return readFileSync(file, "utf8");
+    return readFileSync(file);
   } catch (e) {
     throw new Usage(`cannot read ${file}: ${e.code ?? e.message}`);
   }
@@ -120,12 +123,24 @@ export async function main(argv, io = process) {
   if (opts.command === "help") { out(USAGE); return 0; }
   if (opts.command === "version") { out(`${VERSION}\n`); return 0; }
 
-  let text;
+  let bytes;
   try {
-    text = read(opts.file);
+    bytes = read(opts.file);
   } catch (e) {
     err(`reqtrail: ${escapeControls(e.message)}\n`);
     return 2;
+  }
+
+  // An undecodable file is a WORKSPACE refusal, exit 1: the file must be
+  // edited. It is decoded once, here, for resolve, run and ui alike.
+  let text;
+  try {
+    text = decodeWorkspace(bytes, opts.file);
+  } catch (e) {
+    if (!(e instanceof Refusal)) throw e;
+    if (opts.json) err(JSON.stringify({ error: e.detail }, null, 2) + "\n");
+    else err(renderRefusal(e.detail));
+    return 1;
   }
 
   if (opts.command === "ui") {
