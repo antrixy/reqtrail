@@ -7,6 +7,18 @@
 // that reached output through `url.scheme` was reported clean. A leak detector
 // that can only find leaks it already knows the shape of is not a detector.
 //
+// THE TERMINAL ORACLE IS WRITTEN INDEPENDENTLY OF THE ESCAPER. Until 0.4.1 it
+// was a character-for-character copy of the regex in src/core/errors.js, so it
+// could never report a character the escaper had left out — and the escaper had
+// left out CR, which reached the terminal raw. The oracle is now stated with
+// Unicode properties (every control except LF and tab, every bidi control, the
+// line and paragraph separators) and shares no text with the implementation.
+// HONESTY-PATCH-PREREGISTRATION.md, P-TERMINAL and D2.
+//
+// THE HUMAN CHANNEL IS STDOUT AND STDERR, ON EVERY EXIT. It used to capture
+// stderr only when the command failed, so warnings printed on a successful
+// resolve were never inspected.
+//
 // Channels: the core's thrown detail, CLI human output, CLI --json, and the
 // loopback API. The DOM was NOT REACHED here while the UI rendered a blank page
 // on any refusal — recording it as clean would have been the worse error. It is
@@ -14,7 +26,7 @@
 // carrying a secret in a real browser and reads the rendered document. That
 // check lives there because it needs a browser, which this file does not have.
 
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,7 +38,8 @@ import { TEST_CERT_PATH } from "./tls-receiver.mjs";
 
 // Fixture count tripwire: a fixture that silently stops running would turn this
 // instrument into one that reports "clean" for a path it no longer tests.
-const EXPECTED_FIXTURES = 31;
+const EXPECTED_FIXTURES = 36;
+const EXPECTED_ARGV_FIXTURES = 2;
 
 // After the fix, this file is a regression test: it must exit non-zero while any
 // path leaks. Today it is expected to fail, and the failure IS the measurement.
@@ -48,8 +61,17 @@ const HOSTILE_ACCEPTED = "a\u009fb\u0085c";
 // the resolver, which is exactly the transport-error path this file could not
 // reach while every fixture used `resolve`.
 const SECRET_HOST = `${SECRET.toLowerCase()}.invalid`;
+// A carriage return returns the cursor to the start of the line, so text after
+// it overwrites what came before — including the `reqtrail:` prefix.
+const HOSTILE_CR = "x\rFAKE: all good";
+// Right-to-left override: reorders what follows on the display without any
+// escape sequence. Refused in header values by the charset rule, so it reaches
+// the terminal through keys, ids and provenance instead.
+const HOSTILE_BIDI = "a\u202eb";
+// Line separator. Not a C0 control, not escaped by JSON.stringify.
+const HOSTILE_LS = "a\u2028b";
 // AN UNTRUSTED TLS SERVER, IN A CHILD PROCESS. It has to be a child: the
-// channels below run the binary with execFileSync, which blocks this event
+// channels below run the binary with spawnSync, which blocks this event
 // loop, and a server living here could never accept the connection.
 const tlsServer = spawn(process.execPath, ["-e", `
   const tls = require("node:tls"), fs = require("node:fs");
@@ -115,6 +137,13 @@ const FIXTURES = [
   ["refusal carrying DEL and C1", ws({ requests: [req({ id: `d${HOSTILE_C1}` })] }), {}, "hostile"],
   ["success path with hostile variable value", ws({ variables: { v: HOSTILE }, requests: [req({ url: "https://a.example/?q={{v}}" })] }), {}, "hostile"],
 
+  // --- 0.4.1: CR, bidi and separators (D2) --------------------------------
+  ["schema.unknown-key / CR in a key", { version: 1, requests: [], [HOSTILE_CR]: 1 }, {}, "hostile"],
+  ["schema.unknown-key / bidi override in a key", { version: 1, requests: [], [HOSTILE_BIDI]: 1 }, {}, "hostile"],
+  ["selection.unknown / CR in --request", ws({ requests: [req({ id: "a" }), req({ id: "b" })] }), {}, "hostile", HOSTILE_CR],
+  ["success path / bidi override in a query variable", ws({ variables: { v: HOSTILE_BIDI }, requests: [req({ url: "https://a.example/?q={{v}}" })] }), {}, "hostile"],
+  ["success path / line separator in a query variable", ws({ variables: { v: HOSTILE_LS }, requests: [req({ url: "https://a.example/?q={{v}}" })] }), {}, "hostile"],
+
   // --- a secret in the derived Host header ------------------------------
   // CARRIED OPEN SINCE 0.3.0. `Host` is not copied from the file, it is DERIVED
   // from the URL, so a secret hostname reaches a header nobody wrote. The
@@ -150,9 +179,10 @@ const norm = (s) => {
   return t.replace(/\\u001b|\\x1b/g, "\u001b");
 };
 const carriesSecret = (out) => norm(out).includes(norm(SECRET));
-// C0 controls except tab and newline, DEL, and C1.
-const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/;
-const carriesControl = (out) => CONTROL.test(out);
+// Independent of src/core/errors.js by construction: Unicode properties, not
+// hand-written ranges. LF and tab are the renderer's own layout.
+const TERMINAL_UNSAFE = /(?![\n\t])[\p{Cc}\p{Bidi_Control}\p{Zl}\p{Zp}]/u;
+const carriesControl = (out) => TERMINAL_UNSAFE.test(out);
 
 // --- channels ---------------------------------------------------------------
 
@@ -161,13 +191,7 @@ function channels(fixture, env, extraArg, mode) {
   writeFileSync(file, typeof fixture === "string" ? fixture : JSON.stringify(fixture));
   const args = extraArg ? ["--request", extraArg] : [];
   const verb = mode === "run" ? "run" : "resolve";
-  const run = (extra) => {
-    try {
-      const stdout = execFileSync(process.execPath, [bin, verb, file, ...args, ...extra],
-        { env: { PATH: process.env.PATH, ...env }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-      return stdout;
-    } catch (e) { return (e.stdout ?? "") + (e.stderr ?? ""); }
-  };
+  const run = (extra) => cli([verb, file, ...args, ...extra], env);
 
   // A send has no core or api channel: both of those resolve.
   if (mode === "run") return { core: "", human: run([]), json: run(["--json"]), file };
@@ -182,6 +206,13 @@ function channels(fixture, env, extraArg, mode) {
   }
 
   return { core, human: run([]), json: run(["--json"]), file };
+}
+
+// stdout AND stderr, whatever the exit code. See the header.
+function cli(argv, env = {}) {
+  const r = spawnSync(process.execPath, [bin, ...argv],
+    { env: { PATH: process.env.PATH, ...env }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  return (r.stdout ?? "") + (r.stderr ?? "");
 }
 
 async function apiChannel(fixture, env, extraArg) {
@@ -226,7 +257,22 @@ for (const [name, fixture, env, kind, extraArg, mode] of FIXTURES) {
   if (hit.length) findings.push({ name, hit });
 }
 
-console.log(`\n  ${findings.length} of ${FIXTURES.length} fixtures leak`);
+// --- arguments --------------------------------------------------------------
+// P-TERMINAL covers what the user typed as well as what the file holds: a
+// script can pass an argument it did not write. Human channel only; there is
+// no workspace, so there is nothing for the core, --json or the API to show.
+const ARGV_FIXTURES = [
+  ["usage / CR in an unknown option", ["resolve", join(dir, "w.json"), `--${HOSTILE_CR}`]],
+  ["usage / CR in an unreadable file path", ["resolve", join(dir, `missing${HOSTILE_CR}.json`)]],
+];
+for (const [name, argv] of ARGV_FIXTURES) {
+  const hit = carriesControl(cli(argv)) ? ["human:CONTROL"] : [];
+  console.log(`  ${hit.length ? "LEAK " : "clean"} ${name.padEnd(42)} ${hit.join(" ")}`);
+  if (hit.length) findings.push({ name, hit });
+}
+
+const total = FIXTURES.length + ARGV_FIXTURES.length;
+console.log(`\n  ${findings.length} of ${total} fixtures leak`);
 const secretPaths = findings.filter((f) => f.hit.some((h) => h.endsWith("SECRET")));
 const controlPaths = findings.filter((f) => f.hit.some((h) => h.endsWith("CONTROL")));
 console.log(`  secret disclosure:      ${secretPaths.length} paths`);
@@ -235,8 +281,9 @@ console.log(`  DOM channel:            measured in sitting A as F6, not here`);
 
 tlsServer.kill();
 
-if (FIXTURES.length !== EXPECTED_FIXTURES) {
-  console.error(`\n  FAIL count tripwire: ${FIXTURES.length} fixtures, expected ${EXPECTED_FIXTURES}`);
+if (FIXTURES.length !== EXPECTED_FIXTURES || ARGV_FIXTURES.length !== EXPECTED_ARGV_FIXTURES) {
+  console.error(`\n  FAIL count tripwire: ${FIXTURES.length} + ${ARGV_FIXTURES.length} fixtures, ` +
+    `expected ${EXPECTED_FIXTURES} + ${EXPECTED_ARGV_FIXTURES}`);
   process.exit(2);
 }
 process.exit(findings.length ? 1 : 0);
