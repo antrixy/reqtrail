@@ -13,7 +13,7 @@ pre-registration, not here — this document quotes only its own live counts.
 
 ## Counts, live
 
-As of increment 6: framing and `Connection` refused. Where an IPv6 row could
+As of increment 7: mutants added; the harness repaired. Where an IPv6 row could
 not be run, the count says so and where.
 
     refusals    46/46 carry a literal message
@@ -31,7 +31,8 @@ not be run, the count says so and where.
                 0fccfcd has not been read. This sandbox runs 16/16
                 with REQTRAIL_NO_IPV6=1
     run-tls     12/12
-    mutation    not yet run for this release
+    mutation    81/81 accounted for (1 equivalent, 2 uncovered), no
+                misattribution — the first VALID run; see increment 7
     sitting A   not yet run for this release
 
 ## Predictions
@@ -49,10 +50,10 @@ and is marked, never reworded.
 | P5 | projection and `--json` byte-identical on every existing fixture | open |
 | P6 | CI binds `::1`; no IPv6 row is skipped on CI | **held** for wire — `wire 27/27 OK` on `ubuntu-latest` (1a864c7, Ash's screenshot); wire-tls pending |
 | P7 | IPv6 HTTPS verifies with no change to TLS options | open |
-| P8 | every new mutant killed on its first run | open |
+| P8 | every new mutant killed on its first run | **held on the first valid run** — the first run was void (the unmutated tree was red); judged, not clean, see increment 7 |
 | P9 | checks grow by 25–45 | open |
-| P10 | mutation run completes, every mutant accounted for | open |
-| P11 | at least one of P1–P10 is wrong | open |
+| P10 | mutation run completes, every mutant accounted for | **FALSIFIED** — the first complete run reported 78/81, three expected survivors killed; 81/81 only after repairing the harness |
+| P11 | at least one of P1–P10 is wrong | **held** (P10) |
 
 ## Oracle bites — every new check run against unfixed code first
 
@@ -155,6 +156,51 @@ Recorded per increment, before the fix lands.
   - README gains one paragraph under the `Host` paragraph. "`Connection` is the
     only header that reaches a receiver without appearing above" and "Code 3
     means bytes were attempted" are unedited, and are true again.
+- **Increment 7, mutants — and a harness that could not have told.** Six
+  mutants added, one per pre-registered target, all declared against selftest.
+  - **Run 1** (the six alone): 6/6 killed. **Void** — see run 3's cause 1.
+  - **Run 2** (full): never ran. Started in the background, it died when the
+    tool call ended; the poll (`pgrep -f`) matched its own command line and
+    reported it running for about fourteen minutes. Caught when the process
+    table showed nothing.
+  - **Run 3** (full, detached): completed, **78/81 accounted for**. The
+    equivalent mutant (span attribution without the tautological line) and both
+    uncovered mutants (server row 4's deadline, UI sequencer verdict) were
+    reported killed by selftest. **P10 is falsified by this run**, on its
+    wording: it completed, and three mutants were unaccounted for.
+  - **Two causes, both confirmed, either sufficient alone:**
+    1. **Selftest failed on the UNMUTATED tree.** The D4 mutant's replacement
+       text, `|| true;`, tripped the existing check "no check in this suite is
+       silenced with an always-true clause", which scans every `test/*.mjs`.
+       `npm test` was not run after the mutants were added. Every
+       selftest-declared mutant therefore "died" — including all six new ones,
+       which is why run 1 is void.
+    2. **The harness's copy filter dropped `.github/`.** It excluded any path
+       containing the substring `/.git`, which matches `/.github`; increment 4's
+       check that `REQTRAIL_NO_IPV6` is absent from `.github/` then failed with
+       `ENOENT` in every mutant directory. Harmless until a check read
+       `.github/`, since 0.4.1's run.
+  - **Repairs.** The D4 mutant now replaces the allowlist test with
+    `["close", "keep-alive"].length > 0` — always true, and not a pattern the
+    source check flags. The copy filter matches `.git` as a path segment. And
+    **the harness now runs every suite on an unmutated copy first and refuses
+    to count anything if one fails** — the check whose absence let cause 1
+    through. Shown to bite: with an always-true line appended to a scratch
+    copy's `test/wire.mjs`, the harness printed `mutation: NOT RUN — the
+    unmutated tree fails selftest.mjs` and exited 1.
+  - **Run 4** (the six alone, green baseline): 6/6 killed.
+  - **Run 5** (full, detached, green baseline verified by the harness):
+    **81/81 accounted for** — 78 killed, the equivalent and both uncovered
+    mutants surviving as argued, no mutant killed by the wrong suite.
+  - **P8 is marked held, and that is a judgement for Ash to accept or not.**
+    Its first run was void rather than a result, and the D4 mutant's text
+    changed before the first valid run. The first valid run of each mutant
+    killed it.
+  - Three of the six (D1: target, brackets, default port) are caught by
+    `transportFromHref`'s reconstruction refusal as well as by the rows that
+    check the values. The reconstruction line itself was NOT added as an
+    equivalent mutant: it would be one, since it is unreachable on a correct
+    slice, but it was not pre-registered and P8 is about killed mutants.
 
 ## What the pre-registration did not foresee
 
