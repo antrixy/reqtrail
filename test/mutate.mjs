@@ -432,6 +432,42 @@ const MUTANTS = [
     "src/core/parse.js",
     'refuse("schema.unknown-key", path ? `${path}.${key}` : key,',
     'refuse("schema.unknown-key", `${path}.${key}`,'],
+
+  // ---- 0.5.0, the exact transport request (EXACT-TRANSPORT-PREREGISTRATION.md
+  // increment 7). Each targets SELFTEST, which this harness runs; wire.mjs is
+  // not run here until 0.6.0, which is why D2 made `wireOptions` pure.
+  //
+  // The first three are ALSO caught by `transportFromHref`'s reconstruction
+  // check, which refuses when the slices disagree with the URL API. That is the
+  // check working, not redundancy in the mutant: each would otherwise send the
+  // wrong target, host or port.
+  ["0.5.0 D1 — the target is rebuilt as pathname + search (RT-A2)",
+    "src/core/url.js",
+    'const requestTarget = slash === -1 ? "" : href.slice(slash);',
+    "const requestTarget = u.pathname + u.search;"],
+
+  ["0.5.0 D1 — an IPv6 literal keeps its brackets as the connect hostname (RT-B2)",
+    "src/core/url.js",
+    'const connectHostname = hostPart.startsWith("[") ? hostPart.slice(1, -1) : hostPart;',
+    "const connectHostname = hostPart;"],
+
+  ["0.5.0 D1 — the default port is dropped",
+    "src/core/url.js",
+    'const port = portText === "" ? defaultPort : Number(portText);',
+    'const port = portText === "" ? undefined : Number(portText);'],
+
+  ["0.5.0 D2 — the transport connects to the authority, port and all",
+    "src/transport/http.js",
+    "hostname: t.connectHostname,", "hostname: t.authority,"],
+
+  ["0.5.0 D3 — Trailer is dropped from the framing set",
+    "src/core/prepare.js",
+    '"upgrade", "trailer"]);', '"upgrade"]);'],
+
+  ["0.5.0 D4 — the Connection allowlist admits any value",
+    "src/core/prepare.js",
+    '["close", "keep-alive"].includes(h.exact.text.toLowerCase())',
+    '["close", "keep-alive"].length > 0'],
 ];
 
 const SUITES = ["selftest.mjs", "leak-audit.mjs", "server.mjs",
@@ -446,6 +482,32 @@ const SUITES = ["selftest.mjs", "leak-audit.mjs", "server.mjs",
 // is the interesting one: a mutant killed by a suite OTHER than the declared
 // one dies, but the check meant to protect that behaviour is not the one doing
 // it — a finding about the suite, not a pass.
+// A FRESH COPY OF THE TREE, with node_modules linked rather than copied.
+//
+// THE FILTER MATCHES `.git` AS A PATH SEGMENT. It used to be the substring
+// `/.git`, which also matches `/.github` — so no mutant directory had one, and
+// a selftest check that reads `.github/` (0.5.0, D5) failed in every mutant.
+// Found in 0.5.0 when an equivalent mutant and two uncovered ones all "died".
+function copyTree() {
+  const dir = mkdtempSync(join(tmpdir(), "reqtrail-mutant-"));
+  cpSync(root, dir, {
+    recursive: true,
+    filter: (src) => !src.includes("node_modules") && !/\/\.git(\/|$)/.test(src),
+  });
+  // dist/ is gitignored but present in a working tree; ui.mjs reads it.
+  if (!existsSync(join(dir, "dist", "app.js"))) {
+    cpSync(join(root, "dist"), join(dir, "dist"), { recursive: true });
+  }
+  // node_modules is excluded from the copy for speed, but ui.mjs imports
+  // esbuild. WITHOUT THIS, ui.mjs throws in every mutant directory and the
+  // harness counts the throw as a kill — so every mutant that reached it was
+  // reported dead regardless of what it did. A harness that cannot tell a
+  // failing check from a failing import reports no survivors and means
+  // nothing. Symlinked rather than copied: a copy is 40 MB per mutant.
+  symlinkSync(join(root, "node_modules"), join(dir, "node_modules"), "dir");
+  return dir;
+}
+
 function runSuite(dir, suite) {
   try {
     execFileSync(process.execPath, [join(dir, "test", suite)],
@@ -454,28 +516,33 @@ function runSuite(dir, suite) {
   } catch { return true; }   // killed
 }
 
+// THE UNMUTATED TREE MUST PASS EVERY SUITE FIRST. A kill means "this edit made
+// a suite fail" only if the suite passed without it. 0.5.0 added a mutant whose
+// replacement text tripped selftest's always-true source check, so selftest
+// failed on the unmutated tree, and every selftest-declared mutant "died". No
+// line here noticed. Now the harness refuses to count anything until the copy
+// it mutates is green.
+{
+  const dir = copyTree();
+  try {
+    const red = SUITES.filter((s) => runSuite(dir, s));
+    if (red.length) {
+      console.error(`mutation: NOT RUN — the unmutated tree fails ${red.join(", ")}. ` +
+        "A kill means nothing against a suite that is already red.");
+      process.exit(1);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 const survivors = [];
 const misattributed = [];
 let killed = 0;
 
 for (const [name, file, from, to, expect = "killed", suite = "selftest.mjs"] of MUTANTS) {
-  const dir = mkdtempSync(join(tmpdir(), "reqtrail-mutant-"));
+  const dir = copyTree();
   try {
-    cpSync(root, dir, {
-      recursive: true,
-      filter: (src) => !src.includes("node_modules") && !src.includes("/.git"),
-    });
-    // dist/ is gitignored but present in a working tree; ui.mjs reads it.
-    if (!existsSync(join(dir, "dist", "app.js"))) {
-      cpSync(join(root, "dist"), join(dir, "dist"), { recursive: true });
-    }
-    // node_modules is excluded from the copy for speed, but ui.mjs imports
-    // esbuild. WITHOUT THIS, ui.mjs throws in every mutant directory and the
-    // harness counts the throw as a kill — so every mutant that reached it was
-    // reported dead regardless of what it did. A harness that cannot tell a
-    // failing check from a failing import reports no survivors and means
-    // nothing. Symlinked rather than copied: a copy is 40 MB per mutant.
-    symlinkSync(join(root, "node_modules"), join(dir, "node_modules"), "dir");
     const path = join(dir, file);
     const src = readFileSync(path, "utf8");
     if (!src.includes(from)) {
