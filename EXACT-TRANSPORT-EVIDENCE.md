@@ -13,21 +13,23 @@ pre-registration, not here — this document quotes only its own live counts.
 
 ## Counts, live
 
-As of increment 5: IPv6 over TLS. Where an IPv6 row could not be run, the
-count says so and where.
+As of increment 6: framing and `Connection` refused. Where an IPv6 row could
+not be run, the count says so and where.
 
-    refusals    44/44 carry a literal message
-    selftest    244/244
-    leak-audit  0 of 41 fixtures leak, 0 disclosure paths, 0 escape paths
+    refusals    46/46 carry a literal message
+    selftest    260/260
+    leak-audit  0 of 43 fixtures leak, 0 disclosure paths, 0 escape paths
     ui          27/27
     parity      7/7 byte-identical
     server      51/51
     server-slow 2/2
-    wire        27/27 — observed on CI (ubuntu-latest), the run for
-                1a864c7, reported by Ash; this sandbox cannot bind ::1
-                and runs 25/25 with REQTRAIL_NO_IPV6=1
-    wire-tls    20/20 — NOT YET OBSERVED with IPv6 run; this sandbox
-                runs 16/16 with REQTRAIL_NO_IPV6=1
+    wire        28/28 — 27/27 observed on CI (ubuntu-latest) for
+                1a864c7, reported by Ash; the 28th row landed in
+                increment 6. This sandbox cannot bind ::1 and runs
+                26/26 with REQTRAIL_NO_IPV6=1
+    wire-tls    20/20 — NOT YET OBSERVED with IPv6 run. CI for
+                0fccfcd has not been read. This sandbox runs 16/16
+                with REQTRAIL_NO_IPV6=1
     run-tls     12/12
     mutation    not yet run for this release
     sitting A   not yet run for this release
@@ -40,7 +42,7 @@ and is marked, never reworded.
 
 | # | Prediction | Result |
 | --- | --- | --- |
-| P1 | refusals 43 → 46 | open |
+| P1 | refusals 43 → 46 | on track: 46 after increment 6, the last increment that adds a refusal |
 | P2 | `src/` changes only in `url.js`, `prepare.js`, `transport/http.js` | open |
 | P3 | exactly three existing checks edited | open |
 | P4 | new target and IPv6 rows fail on the baseline, pass after | open |
@@ -132,6 +134,27 @@ Recorded per increment, before the fix lands.
     the rows are written correctly; it is not P7's evidence, which is `::1` on
     CI with `send`'s TLS options unchanged (they are: `http.js` is untouched in
     this increment).
+- **Increment 6, framing and `Connection` refusals (D3, D4), README (D10).**
+  - `enumerate-refusals` 44 → **46**: `header.framing` and `header.connection`,
+    one refusal site each.
+  - Sixteen new selftest rows, run against the increment-5 `prepare.js`:
+    **12 failed** ("did not refuse") — the five framing names, casing,
+    unresolved value, message contents, and four `Connection` refusals.
+    **Four passed there too and are not bites:** they are the accept side —
+    `TE`/`Keep-Alive`/`Proxy-Connection` not refused, `close`/`keep-alive`
+    accepted, a variable resolving to `close` accepted, an unresolved
+    `Connection` reported unresolved. They pin what D3 and D4 must NOT refuse,
+    and would fail if either were written too wide.
+  - Two leak-audit fixtures (41 → 43), a secret as a refused framing value and
+    as a refused `Connection` value: both clean on every channel.
+  - One wire row pins D4's premise: a workspace `Connection: close` is the only
+    `Connection` on the wire. It passes on 0.4.1 as well — it records node's
+    behaviour, which D4 depends on, rather than biting a defect.
+  - Through the binary: a `Trailer` header now exits **1** with a refusal; on
+    0.4.1 it exited 3, `not sent: ERR_HTTP_TRAILER_INVALID` (§1 item 4).
+  - README gains one paragraph under the `Host` paragraph. "`Connection` is the
+    only header that reaches a receiver without appearing above" and "Code 3
+    means bytes were attempted" are unedited, and are true again.
 
 ## What the pre-registration did not foresee
 

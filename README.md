@@ -48,6 +48,13 @@ reqtrail added, and the display is not quietly claiming you wrote it. A
 workspace that sets `Host` itself is refused rather than merged: two would be a
 request-smuggling shape.
 
+**Framing is not the workspace's to declare either.** reqtrail sends GET
+without a body, so a workspace that sets `Content-Length`, `Transfer-Encoding`,
+`Expect`, `Upgrade` or `Trailer` is refused, whatever the value: each would
+change what is sent, or make the send wait, in a way the request shown would
+not. `Connection` may appear once, as `close` or `keep-alive`; anything else is
+refused, and the refusal does not show the value, which may be a secret.
+
 `reqtrail ui example.reqtrail.json` prints a local URL that opens the same view
 in a browser. **It reads the file once, when it starts: restart it after
 editing the file.** **It is read only and has no send button** — sending is the CLI's job, and a page in a
