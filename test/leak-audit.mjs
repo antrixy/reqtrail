@@ -38,7 +38,7 @@ import { TEST_CERT_PATH } from "./tls-receiver.mjs";
 
 // Fixture count tripwire: a fixture that silently stops running would turn this
 // instrument into one that reports "clean" for a path it no longer tests.
-const EXPECTED_FIXTURES = 39;
+const EXPECTED_FIXTURES = 41;
 const EXPECTED_ARGV_FIXTURES = 2;
 
 // After the fix, this file is a regression test: it must exit non-zero while any
@@ -162,6 +162,16 @@ const FIXTURES = [
   ["host.derived / secret is the host",
     ws({ requests: [req({ url: "https://{{$env.T}}/p" })] }),
     { T: SECRET_HOST }, "secret"],
+
+  // --- framing and Connection (EXACT-TRANSPORT-PREREGISTRATION.md D3, D4) --
+  // Both refusals are written to name no value. These are what prove it on
+  // every channel, not only in the core's own message.
+  ["header.framing / secret is the value",
+    ws({ requests: [req({ headers: [{ name: "Transfer-Encoding", value: "{{$env.T}}" }] })] }),
+    { T: SECRET }, "secret"],
+  ["header.connection / secret is the refused value",
+    ws({ requests: [req({ headers: [{ name: "Connection", value: "{{$env.T}}" }] })] }),
+    { T: SECRET }, "secret"],
 
   // --- transport errors, carried open since 0.3.0 -----------------------
   // These two SEND. Every fixture above resolves, so nothing here could reach

@@ -15,7 +15,7 @@ import { Refusal } from "../src/core/errors.js";
 import { renderResolve } from "../src/cli/render.js";
 import { wireOptions } from "../src/transport/http.js";
 
-const EXPECTED = 244;
+const EXPECTED = 260;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin", "reqtrail.js");
@@ -662,6 +662,55 @@ check("a declared host is refused whatever its casing", () =>
   refusal(() => go(ws({ requests: [{ id: "r", method: "GET",
     url: "https://a.example/p",
     headers: [{ name: "hOsT", value: "evil.example" }] }] }))).code === "header.host");
+// FRAMING AND CONNECTION (EXACT-TRANSPORT-PREREGISTRATION.md D3, D4).
+const H = "https://a.example/p";
+const codeFor = (headers, env = {}, variables = {}) =>
+  refusal(() => go(one(H, headers, variables), env)).code;
+const accepted = (headers, env = {}, variables = {}) => {
+  go(one(H, headers, variables), env);
+  return true;
+};
+for (const name of ["Content-Length", "Transfer-Encoding", "Expect", "Upgrade", "Trailer"]) {
+  check(`framing: ${name} is refused`, () =>
+    codeFor([{ name, value: name === "Content-Length" ? "0" : "x" }]) === "header.framing");
+}
+check("framing: refused whatever the casing", () =>
+  codeFor([{ name: "tRaNsFeR-eNcOdInG", value: "chunked" }]) === "header.framing");
+check("framing: refused even when the value does not resolve", () =>
+  codeFor([{ name: "Expect", value: "{{nope}}" }]) === "header.framing");
+check("framing: the refusal names the header and never a secret value", () => {
+  const d = refusal(() => go(one(H, [{ name: "Transfer-Encoding", value: "{{$env.T}}" }]),
+    { T: "chunked-s3cr3t" }));
+  return d.code === "header.framing" && d.path === "headers[0]"
+    && d.cause.includes('"Transfer-Encoding"') && !JSON.stringify(d).includes("s3cr3t");
+});
+check("framing: TE, Keep-Alive and Proxy-Connection are NOT refused", () =>
+  accepted([{ name: "TE", value: "trailers" }, { name: "Keep-Alive", value: "timeout=5" },
+    { name: "Proxy-Connection", value: "keep-alive" }]));
+check("Connection: close and keep-alive are accepted, in any case", () =>
+  accepted([{ name: "Connection", value: "close" }])
+  && accepted([{ name: "connection", value: "Keep-Alive" }]));
+check("Connection: a variable resolving to close is accepted", () =>
+  accepted([{ name: "Connection", value: "{{c}}" }], {}, { c: "close" }));
+check("Connection: an unresolved value is reported unresolved, not refused", () => {
+  const r = go(one(H, [{ name: "Connection", value: "{{nope}}" }]));
+  return r.resolvable === false;
+});
+check("Connection: a second Connection header is refused at the second", () => {
+  const d = refusal(() => go(one(H, [{ name: "Connection", value: "close" },
+    { name: "CONNECTION", value: "close" }])));
+  return d.code === "header.connection" && d.path === "headers[1]";
+});
+check("Connection: a token list is refused", () =>
+  codeFor([{ name: "Connection", value: "close, X-Foo" }]) === "header.connection");
+check("Connection: Upgrade is refused", () =>
+  codeFor([{ name: "Connection", value: "Upgrade" }]) === "header.connection");
+check("Connection: a refused secret value is named nowhere", () => {
+  const d = refusal(() => go(one(H, [{ name: "Connection", value: "{{$env.C}}" }]),
+    { C: "hunter2-s3cr3t" }));
+  return d.code === "header.connection" && !JSON.stringify(d).includes("s3cr3t");
+});
+
 check("EVERY projection header carries an origin", () => {
   const r = go(ws({ requests: [{ id: "r", method: "GET", url: "https://a.example/p",
     headers: [{ name: "X-A", value: "1" }, { name: "X-B", value: "2" }] }] }));

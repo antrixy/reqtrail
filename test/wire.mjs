@@ -24,7 +24,7 @@ import { send, wireHeaders } from "../src/transport/http.js";
 // running — an early exit, a skipped branch, a check deleted in passing —
 // used to be invisible here: the summary printed whatever ran, over itself.
 // It lands before 0.5.0 adds any row, so every new row moves this number.
-const EXPECTED = 27;
+const EXPECTED = 28;
 
 // IPv6 ROWS RUN OR FAIL; THEY NEVER SKIP SILENTLY (D5). They need to bind
 // `::1`. If that fails the suite FAILS, naming the variable below. With
@@ -123,6 +123,20 @@ check("P-TARGET the projection URL is scheme + wire Host + wire target", () => {
   const host = c4.headers.find((h) => h.name === "Host").value;
   return v4.projection.url === `http://${host}${c4.target}`
     && v4.projection.url === `http://127.0.0.1:${r.port}/p?`;
+});
+
+// D4's premise, pinned: when the workspace sets `Connection`, node adds none of
+// its own, so the one on the wire is the one the projection shows. Measured
+// 2026-09-23 before D4 was written; this row keeps it measured.
+const b5 = r.captures.length;
+const connWs = JSON.stringify({ version: 1, variables: {},
+  requests: [{ id: "r", name: "n", method: "GET", url: `http://127.0.0.1:${r.port}/c`,
+    headers: [{ name: "Connection", value: "close" }] }] });
+await send(__prepareForTest(connWs, { env: ENV }).exact);
+const c5 = parseCapture(r.captures[b5]);
+check("P-SHOWN a workspace Connection: close is the only Connection on the wire", () => {
+  const conns = c5.headers.filter((h) => h.name.toLowerCase() === "connection");
+  return conns.length === 1 && conns[0].value === "close";
 });
 
 r.close();
