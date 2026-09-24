@@ -13,8 +13,8 @@ pre-registration, not here — this document quotes only its own live counts.
 
 ## Counts, live
 
-As of increment 7: mutants added; the harness repaired. Where an IPv6 row could
-not be run, the count says so and where.
+As of the release-prep commit (0.5.0, version strings bumped). IPv6 rows need
+`::1`: CI runs them; this sandbox cannot, and says so.
 
     refusals    46/46 carry a literal message
     selftest    260/260
@@ -23,13 +23,12 @@ not be run, the count says so and where.
     parity      7/7 byte-identical
     server      51/51
     server-slow 2/2
-    wire        28/28 — 27/27 observed on CI (ubuntu-latest) for
-                1a864c7, reported by Ash; the 28th row landed in
-                increment 6. This sandbox cannot bind ::1 and runs
-                26/26 with REQTRAIL_NO_IPV6=1
-    wire-tls    20/20 expected on CI in fail-closed mode (Node 22.23.2,
-                nodejs/node#64144) — NOT YET OBSERVED. This sandbox
-                runs 16/16 with REQTRAIL_NO_IPV6=1
+    wire        28/28 on CI (ubuntu-latest). Here: 26/26, 2 IPv6 rows
+                NOT RUN (REQTRAIL_NO_IPV6=1)
+    wire-tls    20/20 on CI (Node 22.23.2, fail-closed mode for the two
+                trusted IPv6 rows, nodejs/node#64144) — inferred from
+                the green run for 42a1db9 as reported by Ash; the line
+                itself was not pasted. Here: 16/16, 4 IPv6 rows NOT RUN
     run-tls     12/12
     mutation    81/81 accounted for (1 equivalent, 2 uncovered), no
                 misattribution — the first VALID run; see increment 7
@@ -43,17 +42,17 @@ and is marked, never reworded.
 
 | # | Prediction | Result |
 | --- | --- | --- |
-| P1 | refusals 43 → 46 | on track: 46 after increment 6, the last increment that adds a refusal |
-| P2 | `src/` changes only in `url.js`, `prepare.js`, `transport/http.js` | open |
-| P3 | exactly three existing checks edited | open |
-| P4 | new target and IPv6 rows fail on the baseline, pass after | open |
-| P5 | projection and `--json` byte-identical on every existing fixture | open |
-| P6 | CI binds `::1`; no IPv6 row is skipped on CI | **held** for wire — `wire 27/27 OK` on `ubuntu-latest` (1a864c7, Ash's screenshot); wire-tls pending |
+| P1 | refusals 43 → 46 | **held** — 46: `header.framing`, `header.connection`, `url.target.undeterminable` |
+| P2 | `src/` changes only in `url.js`, `prepare.js`, `transport/http.js` | **FALSIFIED on its wording** — `src/cli/main.js` changed: the `VERSION` string, `RELEASE.md` step 1, which every release makes and the prediction did not except. No other `src/` file changed. Held in substance; marked by the letter, as P10 was |
+| P3 | exactly three existing checks edited | **held** — wire and wire-tls target rows (to literals), wire's direct-call guard (input only). Every other line removed from an existing test file is a count constant, a comment, a summary format, or the TLS child's catch widened to report `reason` (not a check) |
+| P4 | new target and IPv6 rows fail on the baseline, pass after | **held in part** — both bare-`?` rows captured `/p` on the old transport and pass after. **The IPv6 half was never observed**: the IPv6 row was not run against the old transport on any machine that binds `::1`. The defect itself was reproduced (ENOTFOUND, §1 item 2); the row's bite was not |
+| P5 | projection and `--json` byte-identical on every existing fixture | **held** — `resolve` and `resolve --json` through the binary, 0.4.1 (`fbeaa0f`) against the release tree, on all 39 pre-existing leak-audit fixtures and the example workspace: 80 comparisons of exit code, stdout and stderr, 0 differ. The two fixtures new in 0.5.0 excluded |
+| P6 | CI binds `::1`; no IPv6 row is skipped on CI | **held** — `wire 27/27` then `28/28` observed on `ubuntu-latest`; wire-tls ran all 20 (its two failures on 4c01b77 were TLS identity, after binding); selftest forbids the skip variable under `.github/` |
 | P7 | IPv6 HTTPS verifies with no change to TLS options | **FALSIFIED** — on CI's Node 22.23.2 the IPv6 HTTPS row does not verify (nodejs/node#64144); TLS options unchanged |
 | P8 | every new mutant killed on its first run | **held on the first valid run** — the first run was void (the unmutated tree was red); judged, not clean, see increment 7 |
-| P9 | checks grow by 25–45 | open |
+| P9 | checks grow by 25–45 | **FALSIFIED** — **+49**: selftest +40 (220 → 260), wire +5 (23 → 28), wire-tls +4 (16 → 20); leak fixtures +2 counted separately. An underestimate again, after 0.4.1's first non-underestimate |
 | P10 | mutation run completes, every mutant accounted for | **FALSIFIED** — the first complete run reported 78/81, three expected survivors killed; 81/81 only after repairing the harness |
-| P11 | at least one of P1–P10 is wrong | **held** (P7, P10) |
+| P11 | at least one of P1–P10 is wrong | **held** — P2 (by the letter), P7, P9, P10 wrong; P4 half unobserved |
 
 ## Oracle bites — every new check run against unfixed code first
 
