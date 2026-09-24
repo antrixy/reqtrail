@@ -226,6 +226,21 @@ Recorded per increment, before the fix lands.
   step printing Node's and OpenSSL's versions, since `node-version: '22'` does
   not say which it resolved to, and a `workflow_dispatch` trigger, at Ash's
   request, so a run can be repeated from the Actions tab without a commit.
+- **`cde63f3`, with the diagnostic rows:** both trusted IPv6 sends report
+  `ERR_TLS_CERT_ALTNAME_INVALID` (Ash's screenshot; the Versions step was not
+  in it). So on CI the chain is trusted and node's IDENTITY check rejects the
+  `IP:::1` certificate for the send to `[::1]`. Checked here on Node 22.22.2:
+  node's https agent computes identity `::1` from `send`'s exact options
+  (`servername` "" because the bracket-aware `calculateServerName` strips
+  `[::1]` from the `Host` header and blanks an IP), and `checkServerIdentity`
+  canonicalizes IP SANs, so `0:0:0:0:0:0:0:1` matches. CI's Node differs in one
+  of those two places; which, is not yet known. The child now also reports
+  node's `reason`, which names the hostname compared and the certificate's
+  list.
+- **§6 applies if the cure is a TLS option.** Passing `servername: ""` or a
+  `checkServerIdentity` would change `send`'s TLS options, which §6 says stops
+  the release for a ruling, and which falsifies P7. Nothing is changed in
+  `src/` until the cause is known and ruled on.
 
 ## Release steps outside the repo
 
