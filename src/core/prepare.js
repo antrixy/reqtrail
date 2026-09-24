@@ -104,6 +104,30 @@ export function prepareRequest(request, variables, env) {
       "URL, and sending two would be a request-smuggling shape");
   }
 
+  // FRAMING IS NOT A WORKSPACE'S TO DECLARE (EXACT-TRANSPORT-PREREGISTRATION.md
+  // D3). reqtrail sends GET without a body. Each of these changes what node
+  // writes, or makes it wait, in a way no projection shows — measured on 0.4.1:
+  //   Transfer-Encoding: chunked  node writes a body, `0\r\n\r\n`, after the
+  //                               header block
+  //   Content-Length: 5           a real server waits for five bytes forever
+  //   Upgrade (answered 101)      node emits `upgrade`, never `response`
+  //   Trailer                     node throws ERR_HTTP_TRAILER_INVALID before
+  //                               any socket, which reached exit 3, "bytes
+  //                               attempted"
+  //   Expect                      an expectation reqtrail does not model
+  // Refused WHATEVER THE VALUE — empty, literal, secret or unresolved — because
+  // the NAME is always literal, so this names only the name. Not refused, and
+  // measured to pass verbatim: TE, Keep-Alive, Proxy-Connection.
+  const FRAMING = new Set(["content-length", "transfer-encoding", "expect", "upgrade", "trailer"]);
+  const framing = request.headers.findIndex((h) => FRAMING.has(h.name.toLowerCase()));
+  if (framing !== -1) {
+    refuse("header.framing", `headers[${framing}]`,
+      "a workspace may not set $header; reqtrail sends GET without a body and " +
+      "does not model message framing, so this header would change what is " +
+      "sent in a way the request shown would not",
+      { header: request.headers[framing].name });
+  }
+
   const urlSegs = segment(request.url, "url", variables, env);
 
   const headerSegs = request.headers.map((h, n) => {
@@ -268,6 +292,24 @@ export function prepareRequest(request, variables, env) {
         { determined: true, transformed: false, produced: s.secret ? undefined : s.value },
         false));
     }
+  }
+
+  // `Connection` ONCE, AS `close` OR `keep-alive` (D4). node adds no Connection
+  // of its own when the workspace sets one, so this header is what reaches the
+  // wire; a second one, a token list, or a token naming another header would
+  // reach it verbatim with meaning reqtrail does not model. An allowlist, so it
+  // can be widened later without breaking a file. Checked on the RESOLVED
+  // value; an unresolved one is already unsendable and is reported as such.
+  // The message names no value, because a value can come from a secret.
+  const connections = headerSegs.filter((h) => h.name.toLowerCase() === "connection");
+  const connectionOk = (h) =>
+    !h.segs.every((sg) => sg.kind === "literal" || sg.resolved)
+    || ["close", "keep-alive"].includes(h.exact.text.toLowerCase());
+  if (connections.length > 1 || (connections.length === 1 && !connectionOk(connections[0]))) {
+    refuse("header.connection", connections[connections.length > 1 ? 1 : 0].path,
+      "Connection may appear once, with the value close or keep-alive; " +
+      "reqtrail does not model other connection options, so it does not send " +
+      "them. The value is not shown");
   }
 
   // THE EXACT REQUEST. Private, carries real secret bytes, and is the only
