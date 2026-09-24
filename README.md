@@ -193,6 +193,14 @@ untrusted, or issued for a different host — is code 3: bytes went out,
 and nothing in the workspace would fix it. Certificate verification cannot be
 turned off, including by `NODE_TLS_REJECT_UNAUTHORIZED=0`.
 
+**HTTPS to an IPv6 literal fails on some Node versions.** Node's security
+releases for CVE-2026-48618 stopped matching IPv6 addresses against a
+certificate's IP entries ([nodejs/node#64144](https://github.com/nodejs/node/issues/64144)),
+so `https://[::1]/…` fails verification even with a correct certificate.
+Measured on Node 22.23.2; fixed upstream in Node 26.6.0. `run` reports it as
+code 3 with `ERR_TLS_CERT_ALTNAME_INVALID`, and does not work around it: the
+failure is closed, and reqtrail does not check certificates itself.
+
 **Code 3 is `run` only.** `resolve` never sends, so nothing can fail in transit;
 an unresolved reference is code 1 under both verbs, because nothing was sent and
 the instruction is still *edit something*. **A non-2xx response is code 0**: the

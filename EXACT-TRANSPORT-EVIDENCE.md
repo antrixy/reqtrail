@@ -27,9 +27,9 @@ not be run, the count says so and where.
                 1a864c7, reported by Ash; the 28th row landed in
                 increment 6. This sandbox cannot bind ::1 and runs
                 26/26 with REQTRAIL_NO_IPV6=1
-    wire-tls    **FAILING ON CI** — 18/20 on 4c01b77 (run #51): both
-                TRUSTED IPv6 sends fail. This sandbox runs 16/16 with
-                REQTRAIL_NO_IPV6=1. Under diagnosis; see below
+    wire-tls    20/20 expected on CI in fail-closed mode (Node 22.23.2,
+                nodejs/node#64144) — NOT YET OBSERVED. This sandbox
+                runs 16/16 with REQTRAIL_NO_IPV6=1
     run-tls     12/12
     mutation    81/81 accounted for (1 equivalent, 2 uncovered), no
                 misattribution — the first VALID run; see increment 7
@@ -49,11 +49,11 @@ and is marked, never reworded.
 | P4 | new target and IPv6 rows fail on the baseline, pass after | open |
 | P5 | projection and `--json` byte-identical on every existing fixture | open |
 | P6 | CI binds `::1`; no IPv6 row is skipped on CI | **held** for wire — `wire 27/27 OK` on `ubuntu-latest` (1a864c7, Ash's screenshot); wire-tls pending |
-| P7 | IPv6 HTTPS verifies with no change to TLS options | **at risk** — trusted IPv6 TLS sends fail on CI, cause unknown |
+| P7 | IPv6 HTTPS verifies with no change to TLS options | **FALSIFIED** — on CI's Node 22.23.2 the IPv6 HTTPS row does not verify (nodejs/node#64144); TLS options unchanged |
 | P8 | every new mutant killed on its first run | **held on the first valid run** — the first run was void (the unmutated tree was red); judged, not clean, see increment 7 |
 | P9 | checks grow by 25–45 | open |
 | P10 | mutation run completes, every mutant accounted for | **FALSIFIED** — the first complete run reported 78/81, three expected survivors killed; 81/81 only after repairing the harness |
-| P11 | at least one of P1–P10 is wrong | **held** (P10) |
+| P11 | at least one of P1–P10 is wrong | **held** (P7, P10) |
 
 ## Oracle bites — every new check run against unfixed code first
 
@@ -241,6 +241,38 @@ Recorded per increment, before the fix lands.
   `checkServerIdentity` would change `send`'s TLS options, which §6 says stops
   the release for a ruling, and which falsifies P7. Nothing is changed in
   `src/` until the cause is known and ruled on.
+- **`b3ee836`: the cause, in Node.** Versions step: `node v22.23.2 openssl
+  3.5.7`. Both trusted sends: `ERR_TLS_CERT_ALTNAME_INVALID`, reason `Host: ::1.
+  is not cert's CN: ::1 (reqtrail TEST ONLY)`. Node v22.23.2's
+  `checkServerIdentity` (read from the tag's `lib/tls.js`) gates the IP branch
+  on `domainToASCII(hostname)`, and `domainToASCII("::1")` is `""` (measured
+  here), so an IPv6 literal is never compared with IP SANs and falls through to
+  the CN. v22.22.2's `lib/tls.js` has no `domainToASCII`. This is
+  nodejs/node#64144, a regression from the CVE-2026-48618 security releases:
+  fail-closed, fixed in Node 26.6.0 and on the `v24.x` branch, not on `v22.x`
+  as of 2026-09-24. IPv4 literals are unaffected. **P7 is falsified**: on CI the
+  IPv6 HTTPS row does not verify. `send`'s TLS options are unchanged.
+- **RULED 2026-09-24 by Ash, §6: option 3 — measure the runtime.** Rejected:
+  pinning CI to 22.22.2 (tests on a Node without the CVE fix, hides what users
+  on current 22.x hit); working around it in `send` (reqtrail re-implementing
+  identity checks, in the function the CVE was about, below the P-VERIFY
+  floor); cutting IPv6-over-TLS (the behaviour is the same, untested).
+  - `wire-tls.mjs` asks THIS Node's `tls.checkServerIdentity("::1", <the IPv6
+    test certificate>)` first. Where it accepts, the two trusted rows assert a
+    verified send, as before. Where it rejects, they assert fail-closed:
+    `ERR_TLS_CERT_ALTNAME_INVALID`, no request bytes at the raw receiver, no
+    request served by the real server. The summary line names the Node version
+    and #64144. Count unchanged, 20.
+  - In fail-closed mode, the Host and target of an IPv6 TLS send are not
+    observed on the wire. The plain IPv6 wire rows observe them, and TLS adds no
+    translation; stated rather than left implicit.
+  - **Both modes exercised here over IPv4**, scratch copies only: a certificate
+    for `IP:127.0.0.1` (runtime accepts) → 20/20; one for `IP:127.0.0.2`
+    (runtime rejects) → 20/20 with the fail-closed note. **Bites both ways:**
+    forcing the accept mode where the runtime rejects failed both rows; forcing
+    fail-closed where it accepts failed both, one of them `1 request(s) served`.
+  - README gains a paragraph under the exit-code notes naming the limitation,
+    the issue, the measured version and the upstream fix.
 
 ## Release steps outside the repo
 
