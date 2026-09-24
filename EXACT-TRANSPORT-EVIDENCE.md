@@ -1,19 +1,22 @@
 # 0.5.0 exact transport request — evidence
 
-**NOT RELEASED. This document is live.** It was created in the same commit as
-`EXACT-TRANSPORT-PREREGISTRATION.md` (`RELEASE.md` step 2), and the live drift
-guard in `test/selftest.mjs` is pointed at it from that commit. It is completed
-as the release is built, and frozen by the first commit after publishing
-(`RELEASE.md` step 17).
+**Released 2026-09-24 as `reqtrail@0.5.0`**, tagged `v0.5.0` on
+`8d643fbc413d5d63de8bfc24b383912a459c069c`. **Frozen**: the drift guard in
+`test/selftest.mjs` pins this document at the count 0.5.0 shipped (`RELEASE.md`
+step 17). Eleven predictions are resolved below; **four are falsified and kept
+with their original wording** (P2 by the letter, P7, P9, P10), and half of P4
+was never observed. The release steps outside the repo are recorded at the
+bottom, each with what was observed.
 
 Pre-registration: `EXACT-TRANSPORT-PREREGISTRATION.md`, Section 4 frozen from
 the commit that adds it. Baseline `fbeaa0f26f9734a26e54e12664b3cca7c33eec57`
 (0.4.1 plus the step-17 freeze); the baseline counts are in the
 pre-registration, not here — this document quotes only its own live counts.
 
-## Counts, live
+## Counts, as shipped
 
-As of the release-prep commit (0.5.0, version strings bumped). IPv6 rows need
+As of the release-prep commit (0.5.0, version strings bumped); unchanged at
+the tag. IPv6 rows need
 `::1`: CI runs them; this sandbox cannot, and says so.
 
     refusals    46/46 carry a literal message
@@ -308,4 +311,37 @@ Recorded per increment, before the fix lands.
   `Expect`/`Connection: Upgrade` sent as written by 0.4.1), selftest rows
   (`TE`, `Keep-Alive`, `Proxy-Connection`, `Connection: close` accepted), and
   the Mac run (Node 24.4.1 verifies IPv6 HTTPS).
-- Tagging, publishing and steps 14–17: not yet reached.
+- **Steps 9–10** — no `v0.5.0` tag existed (Ash); confirmed independently,
+  `raw.githubusercontent.com/antrixy/reqtrail/v0.5.0/README.md` → 404. No
+  delete needed.
+- **Step 11** — release created by Ash, tag `v0.5.0` on `main`. LOOKUP:
+  `prepare.js`, `url.js`, `http.js`, `README.md`, this file and `package.json`
+  fetched through the tag ref (cache-busted) are byte-identical to the
+  sha-pinned `8d643fb` tree; `package.json` says `0.5.0`. The tag's tarball
+  names commit `8d643fbc413d5d63de8bfc24b383912a459c069c`. VERIFICATION: that
+  sha's pinned archive, sha256
+  `d7984daaa008194c10bf01fbb46ac42641efc2ae852a80c3aec4a967b8bd4e4a`, clean
+  `npm test` green (`REQTRAIL_NO_IPV6=1`; its only change from `5cc5023`, which
+  the Mac and the sitting ran, is this file).
+- **Steps 12–13** — Actions → `publish`, run by Ash. Log: `+ reqtrail@0.5.0`,
+  shasum `095f9215c5d30ac10ee988c0ce477d4849e38703`, 33 files, 126.1 kB, signed
+  provenance published to the transparency log. The registry served
+  `reqtrail@0.5.0` on the first fetch afterwards, same shasum, integrity
+  `sha512-nzWr4aMTIiXirgFMD2YzAmE0K+IRqMxpHYV0IpH2FWLuVEVvuLPA65M5ZMw9H7v0JFbQrTeOqixQyVGtTbtrCQ==`.
+- **Step 14** — the tarball fetched FROM THE REGISTRY (sha1 `095f9215…`, as
+  published): **all 33 files byte-identical to the tag tree**, none absent from
+  it. `dist/` included: the published `dist/app.js` (200192 bytes, the size the
+  Mac build reported) is identical to the bundle built from the tag tree here,
+  so the UI build is deterministic across machines.
+- **Step 15** — `npm install reqtrail@0.5.0` into an empty project, the
+  installed binary run: `--version` → `0.5.0`; `resolve` on
+  `http://[::1]:8080/health?` → `GET http://[::1]:8080/health?`,
+  `Host: [::1]:8080`; `run` with `Transfer-Encoding` and with `Trailer` →
+  `header.framing`, exit 1; `run` against a raw receiver on
+  `http://127.0.0.1:PORT/health?` → the receiver captured
+  `GET /health? HTTP/1.1`.
+- **Step 16** — the handoff is written in `project-planning` in the same
+  sitting: `handoffs/reqtrail/NEXT.md` and a `decisions.md` entry for the §6
+  ruling.
+- **Step 17** — this document's drift guard frozen at 260, in the first commit
+  after publishing. The guard is unpointed until the next pre-registration.
