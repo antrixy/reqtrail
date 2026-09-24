@@ -27,9 +27,9 @@ not be run, the count says so and where.
                 1a864c7, reported by Ash; the 28th row landed in
                 increment 6. This sandbox cannot bind ::1 and runs
                 26/26 with REQTRAIL_NO_IPV6=1
-    wire-tls    20/20 — NOT YET OBSERVED with IPv6 run. CI for
-                0fccfcd has not been read. This sandbox runs 16/16
-                with REQTRAIL_NO_IPV6=1
+    wire-tls    **FAILING ON CI** — 18/20 on 4c01b77 (run #51): both
+                TRUSTED IPv6 sends fail. This sandbox runs 16/16 with
+                REQTRAIL_NO_IPV6=1. Under diagnosis; see below
     run-tls     12/12
     mutation    81/81 accounted for (1 equivalent, 2 uncovered), no
                 misattribution — the first VALID run; see increment 7
@@ -49,7 +49,7 @@ and is marked, never reworded.
 | P4 | new target and IPv6 rows fail on the baseline, pass after | open |
 | P5 | projection and `--json` byte-identical on every existing fixture | open |
 | P6 | CI binds `::1`; no IPv6 row is skipped on CI | **held** for wire — `wire 27/27 OK` on `ubuntu-latest` (1a864c7, Ash's screenshot); wire-tls pending |
-| P7 | IPv6 HTTPS verifies with no change to TLS options | open |
+| P7 | IPv6 HTTPS verifies with no change to TLS options | **at risk** — trusted IPv6 TLS sends fail on CI, cause unknown |
 | P8 | every new mutant killed on its first run | **held on the first valid run** — the first run was void (the unmutated tree was red); judged, not clean, see increment 7 |
 | P9 | checks grow by 25–45 | open |
 | P10 | mutation run completes, every mutant accounted for | **FALSIFIED** — the first complete run reported 78/81, three expected survivors killed; 81/81 only after repairing the harness |
@@ -204,7 +204,28 @@ Recorded per increment, before the fix lands.
 
 ## What the pre-registration did not foresee
 
-Nothing yet.
+- **The IPv6 TLS rows fail on CI, and `main` is red from increment 5 on.**
+  Run #51 (`4c01b77`), from Ash's screenshot: `wire 28/28 OK`, then
+  `FAIL 2 of 20` in wire-tls — "P-ENDPOINT/TLS an IPv6 literal is sent
+  verified" and "W-REAL/TLS/IPv6 a real HTTPS server on ::1 accepts the
+  request". The untrusted row and the identity-mismatch row PASS, so on CI the
+  runner binds `::1`, TLS connects, and verification runs; the TRUSTED send is
+  what does not succeed. The run below #51 was red too; which commits in
+  between were red has not been read.
+- **What was checked here, without IPv6:** the committed certificate is trusted
+  as a CA both with `ca:` and via `NODE_EXTRA_CA_CERTS` in a child;
+  `tls.checkServerIdentity("::1", cert)` passes; a child with only
+  `NODE_EXTRA_CA_CERTS` pointing at it gets `200` from a server presenting it,
+  with identity checked as `::1` (Node 22.22.2, bundled OpenSSL 3.0.13). The
+  increment-5 IPv4 stand-in used a THROWAWAY certificate, not the committed one
+  — it showed the rows were written correctly and could not have caught a
+  problem with the certificate. Nothing checked so far explains the CI result.
+- **Diagnosis first, no fix yet.** The four IPv6 TLS rows returned `false` with
+  no detail. They now throw with what the child reported and what the receiver
+  captured; the IPv4 stand-in still passes 20/20 with them. `test.yml` gains a
+  step printing Node's and OpenSSL's versions, since `node-version: '22'` does
+  not say which it resolved to, and a `workflow_dispatch` trigger, at Ash's
+  request, so a run can be repeated from the Actions tab without a commit.
 
 ## Release steps outside the repo
 
