@@ -23,6 +23,8 @@
 // must mean no request bytes reached the server, secrets included.
 
 import https from "node:https";
+import tls from "node:tls";
+import { X509Certificate } from "node:crypto";
 import net from "node:net";
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -172,6 +174,7 @@ check("W-REAL/TLS a real HTTPS server accepts the request", () => realSent.statu
 // ON for `[::1]` — trusted succeeds, untrusted and wrong-identity both fail
 // with nothing delivered — not merely that a send completes.
 let ipv6NotRun = 0;
+let v6Note = "";
 const bindable = NO_IPV6 ? null : await new Promise((res) => {
   const probe = net.createServer();
   probe.once("error", (e) => res(e.code ?? "error"));
@@ -183,6 +186,25 @@ if (NO_IPV6) {
   failures.push(`IPv6: cannot bind ::1 (${bindable}). These ${IPV6_ROWS} rows need it. ` +
     "Set REQTRAIL_NO_IPV6=1 to not run them; the summary will say so.");
 } else {
+  // THE RUNTIME'S OWN VERDICT FIRST (ruled 2026-09-24, option 3). Node's
+  // CVE-2026-48618 security releases broke `tls.checkServerIdentity` for IPv6
+  // literals: it runs the hostname through `domainToASCII`, which returns "" for
+  // `::1`, so the IP-SAN branch is skipped and a correct `IP:::1` certificate is
+  // rejected, ERR_TLS_CERT_ALTNAME_INVALID — nodejs/node#64144. Measured on CI
+  // at Node v22.23.2 (OpenSSL 3.5.7); fixed upstream in 26.6.0 and on v24.x,
+  // not on v22.x as of 2026-09-24. Fail-closed: no security hole.
+  //
+  // reqtrail does NOT work around it: re-implementing identity checks in `send`
+  // would break the P-VERIFY floor, in the very function the CVE was about. So
+  // the rows ask THIS Node whether it accepts the certificate for `::1`, and
+  // assert whichever behaviour is correct for it: a verified send where it
+  // accepts, fail-closed with no bytes delivered where it does not. When Node
+  // fixes 22.x, the rows switch back by themselves. The summary names the mode.
+  const runtimeAcceptsV6 = tls.checkServerIdentity("::1",
+    new X509Certificate(readFileSync(TEST_IPV6_CERT_PATH)).toLegacyObject()) === undefined;
+  if (!runtimeAcceptsV6) v6Note = `node ${process.version} rejects IPv6 IP-SAN identity ` +
+    "(nodejs/node#64144): trusted IPv6 sends asserted FAIL-CLOSED";
+
   const TRUSTED6 = { NODE_EXTRA_CA_CERTS: TEST_IPV6_CERT_PATH };
   const r6 = await startTlsReceiver({ ipv6: true });
   const base6 = `https://[::1]:${r6.port}`;
@@ -191,15 +213,24 @@ if (NO_IPV6) {
   const c6 = r6.captures[b6] ? parseCapture(r6.captures[b6]) : null;
   // A FAILURE SAYS WHAT WAS OBSERVED. These rows first returned `false` alone,
   // and their first CI failure (4c01b77) could not be diagnosed from the log.
-  check("P-ENDPOINT/TLS an IPv6 literal is sent verified: Host bracketed, target intact", () => {
-    const host = c6?.headers.find((h) => h.name === "Host")?.value;
-    if (sent6.status !== 200 || c6 === null || host !== `[::1]:${r6.port}`
-        || c6.target !== "/users/42?q=a%20b") {
-      throw new Error(`child ${JSON.stringify(sent6)}, captured ` +
-        (c6 ? `Host ${JSON.stringify(host)} target ${JSON.stringify(c6.target)}` : "nothing"));
-    }
-    return true;
-  });
+  if (runtimeAcceptsV6) {
+    check("P-ENDPOINT/TLS an IPv6 literal is sent verified: Host bracketed, target intact", () => {
+      const host = c6?.headers.find((h) => h.name === "Host")?.value;
+      if (sent6.status !== 200 || c6 === null || host !== `[::1]:${r6.port}`
+          || c6.target !== "/users/42?q=a%20b") {
+        throw new Error(`child ${JSON.stringify(sent6)}, captured ` +
+          (c6 ? `Host ${JSON.stringify(host)} target ${JSON.stringify(c6.target)}` : "nothing"));
+      }
+      return true;
+    });
+  } else {
+    check("P-VERIFY/IPv6 this Node rejects IPv6 identity (#64144): the send fails closed, NO bytes", () => {
+      if (sent6.code !== "ERR_TLS_CERT_ALTNAME_INVALID" || c6 !== null) {
+        throw new Error(`child ${JSON.stringify(sent6)}, captured ${c6 ? "request bytes" : "nothing"}`);
+      }
+      return true;
+    });
+  }
   const b7 = r6.captures.length;
   const untrusted6 = await childSend(base6, {});
   check("P-VERIFY/IPv6 an untrusted certificate fails and delivers NO request bytes", () => {
@@ -223,17 +254,27 @@ if (NO_IPV6) {
   });
   rm.close();
 
+  let real6Requests = 0;
   const real6 = https.createServer({
     key: readFileSync(TEST_IPV6_CERT_PATH.replace("-cert.pem", "-key.pem")),
     cert: readFileSync(TEST_IPV6_CERT_PATH),
-  }, (q, s) => s.end("ok"));
+  }, (q, s) => { real6Requests++; s.end("ok"); });
   await new Promise((res) => real6.listen(0, "::1", res));
   const realSent6 = await childSend(`https://[::1]:${real6.address().port}`, TRUSTED6);
   real6.close();
-  check("W-REAL/TLS/IPv6 a real HTTPS server on ::1 accepts the request", () => {
-    if (realSent6.status !== 200) throw new Error(`child ${JSON.stringify(realSent6)}`);
-    return true;
-  });
+  if (runtimeAcceptsV6) {
+    check("W-REAL/TLS/IPv6 a real HTTPS server on ::1 accepts the request", () => {
+      if (realSent6.status !== 200) throw new Error(`child ${JSON.stringify(realSent6)}`);
+      return true;
+    });
+  } else {
+    check("W-REAL/TLS/IPv6 this Node rejects IPv6 identity (#64144): no request reaches the server", () => {
+      if (realSent6.code !== "ERR_TLS_CERT_ALTNAME_INVALID" || real6Requests !== 0) {
+        throw new Error(`child ${JSON.stringify(realSent6)}, ${real6Requests} request(s) served`);
+      }
+      return true;
+    });
+  }
 }
 
 if (failures.length) {
@@ -247,4 +288,4 @@ if (passed !== EXPECTED - ipv6NotRun) {
 if (failures.length) process.exit(1);
 console.log(ipv6NotRun
   ? `wire-tls ${passed}/${EXPECTED - ipv6NotRun} OK   (${ipv6NotRun} IPv6 rows NOT RUN: REQTRAIL_NO_IPV6=1)`
-  : `wire-tls ${passed}/${EXPECTED} OK`);
+  : `wire-tls ${passed}/${EXPECTED} OK` + (v6Note ? `   (${v6Note})` : ""));
