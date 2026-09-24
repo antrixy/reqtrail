@@ -19,6 +19,10 @@ name: test
 on:
   push:
   pull_request:
+  # ON DEMAND, from the Actions tab ("Run workflow"), like `publish`. Added
+  # during 0.5.0 so a run can be repeated without a commit — for a flaky runner,
+  # a new runner image, or a diagnosis like the IPv6 TLS failure on 4c01b77.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -41,6 +45,12 @@ jobs:
       # the UI bundle with esbuild before it runs.
       - name: Install dependencies
         run: npm ci
+
+      # What the suite ran on, in the log. 0.5.0's IPv6 TLS rows passed locally
+      # on Node 22.22.2 and failed here, and the log did not say which Node or
+      # OpenSSL `node-version: '22'` resolved to.
+      - name: Versions
+        run: node -e "console.log('node', process.version, 'openssl', process.versions.openssl)"
 
       # The whole suite, exactly as RELEASE.md and prepack run it. Not a subset:
       # the file that broke `main` was a test file, and a subset chosen for speed
