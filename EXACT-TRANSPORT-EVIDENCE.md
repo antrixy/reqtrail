@@ -23,16 +23,19 @@ As of the release-prep commit (0.5.0, version strings bumped). IPv6 rows need
     parity      7/7 byte-identical
     server      51/51
     server-slow 2/2
-    wire        28/28 on CI (ubuntu-latest). Here: 26/26, 2 IPv6 rows
-                NOT RUN (REQTRAIL_NO_IPV6=1)
+    wire        28/28 on CI (ubuntu-latest) and on Ash's Mac. Here:
+                26/26, 2 IPv6 rows NOT RUN (REQTRAIL_NO_IPV6=1)
     wire-tls    20/20 on CI (Node 22.23.2, fail-closed mode for the two
                 trusted IPv6 rows, nodejs/node#64144) — inferred from
                 the green run for 42a1db9 as reported by Ash; the line
-                itself was not pasted. Here: 16/16, 4 IPv6 rows NOT RUN
+                itself was not pasted. 20/20 on Ash's Mac (Node
+                24.4.1) in VERIFIED-SEND mode. Here: 16/16, 4 IPv6
+                rows NOT RUN
     run-tls     12/12
     mutation    81/81 accounted for (1 equivalent, 2 uncovered), no
                 misattribution — the first VALID run; see increment 7
-    sitting A   not yet run for this release
+    sitting A   15/17 held — B1–B9, F1–F4, F6, F8 right; B10 (meta) wrong;
+                F7 answered elsewhere. Release tree 5cc5023, macOS, Chrome
 
 ## Predictions
 
@@ -275,4 +278,34 @@ Recorded per increment, before the fix lands.
 
 ## Release steps outside the repo
 
-Not yet reached.
+- **Step 4, clean checkout** — Ash's Mac, fresh clone at
+  `5cc5023f6902ec4c724f458d6f3e325f3e4e2c3e`, **Node v24.4.1, OpenSSL 3.6.1**:
+  refusals 46/46, selftest 260/260, 0 of 43 leak, ui 27/27, server 51/51,
+  server-slow 2/2, **wire 28/28, wire-tls 20/20**, run-tls 12/12, all with IPv6
+  run. parity passed (the next suite ran; the grep pattern did not match its
+  line). **The two trusted IPv6 TLS rows ran in verified-send mode, no
+  fail-closed note**: this Node predates the CVE-2026-48618 releases, so a real
+  `https://[::1]` send verified against `IP:::1` with `Host [::1]:port` and the
+  target observed on the wire, `send`'s TLS options unchanged. Both modes of the
+  §6 ruling are therefore observed on real `::1`: verified on 24.4.1,
+  fail-closed on 22.23.2. P7 stays falsified as written — it failed on CI's
+  Node — but the path it predicted works where Node is not broken. Also: the
+  sandbox's sha-pinned archive, `REQTRAIL_NO_IPV6=1`, green.
+- **Step 5, sitting A** — same clone, `npm run build:ui` (`dist/app.js`,
+  200192 bytes), Chrome on macOS: **15/17 held**, the 0.4.1 shape. F3's page
+  text: "This view shows requests. It does not send them — run reqtrail run to
+  send."
+- **Step 6, the About sidebar** — read by Ash: "Shows the HTTP request it hands
+  to the transport — method, URL, headers — and where every substituted value
+  came from. resolve never sends; run sends and reports the status.
+  Local-first, plain JSON workspaces, CLI plus a loopback web UI." Accurate for
+  0.5.0; no version claim. Unchanged.
+- **Steps 7–8, release notes** — every example captured from the 0.5.0 binary
+  at `5cc5023`; the bare-`?` wire lines captured by a raw receiver from the
+  0.4.1 binary (`GET /health HTTP/1.1`) and the 0.5.0 binary (`GET /health?
+  HTTP/1.1`). Each claim checked against a measurement: the §1 probes
+  (chunked body, `Content-Length` hang, `101` hang, `Trailer` exit 3 → 1,
+  `Expect`/`Connection: Upgrade` sent as written by 0.4.1), selftest rows
+  (`TE`, `Keep-Alive`, `Proxy-Connection`, `Connection: close` accepted), and
+  the Mac run (Node 24.4.1 verifies IPv6 HTTPS).
+- Tagging, publishing and steps 14–17: not yet reached.
