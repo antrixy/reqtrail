@@ -56,7 +56,14 @@ if (process.argv[2] === "--send") {
   const { exact } = __prepareForTest(work(process.argv[3]), { env: ENV });
   let out;
   try { out = { status: (await send(exact)).status }; }
-  catch (e) { out = { code: typeof e?.code === "string" ? e.code : "no-code" }; }
+  catch (e) {
+    out = { code: typeof e?.code === "string" ? e.code : "no-code" };
+    // NODE'S OWN REASON, for the IPv6 TLS diagnosis (0.5.0): an altname error
+    // names the hostname it compared and the certificate's list, which the code
+    // alone does not. Safe to print: this child only ever talks to the suite's
+    // TEST-ONLY certificates, and the workspace it sends holds no secret.
+    if (typeof e?.reason === "string") out.reason = e.reason;
+  }
   process.stdout.write(JSON.stringify(out) + "\n");
   process.exit(0);
 }
