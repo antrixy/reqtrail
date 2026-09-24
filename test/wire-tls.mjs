@@ -182,23 +182,38 @@ if (NO_IPV6) {
   const b6 = r6.captures.length;
   const sent6 = await childSend(base6, TRUSTED6);
   const c6 = r6.captures[b6] ? parseCapture(r6.captures[b6]) : null;
-  check("P-ENDPOINT/TLS an IPv6 literal is sent verified: Host bracketed, target intact", () =>
-    sent6.status === 200 && c6 !== null
-    && c6.headers.find((h) => h.name === "Host").value === `[::1]:${r6.port}`
-    && c6.target === "/users/42?q=a%20b");
+  // A FAILURE SAYS WHAT WAS OBSERVED. These rows first returned `false` alone,
+  // and their first CI failure (4c01b77) could not be diagnosed from the log.
+  check("P-ENDPOINT/TLS an IPv6 literal is sent verified: Host bracketed, target intact", () => {
+    const host = c6?.headers.find((h) => h.name === "Host")?.value;
+    if (sent6.status !== 200 || c6 === null || host !== `[::1]:${r6.port}`
+        || c6.target !== "/users/42?q=a%20b") {
+      throw new Error(`child ${JSON.stringify(sent6)}, captured ` +
+        (c6 ? `Host ${JSON.stringify(host)} target ${JSON.stringify(c6.target)}` : "nothing"));
+    }
+    return true;
+  });
   const b7 = r6.captures.length;
   const untrusted6 = await childSend(base6, {});
-  check("P-VERIFY/IPv6 an untrusted certificate fails and delivers NO request bytes", () =>
-    untrusted6.status === undefined && typeof untrusted6.code === "string"
-    && r6.captures.length === b7);
+  check("P-VERIFY/IPv6 an untrusted certificate fails and delivers NO request bytes", () => {
+    if (untrusted6.status !== undefined || typeof untrusted6.code !== "string"
+        || r6.captures.length !== b7) {
+      throw new Error(`child ${JSON.stringify(untrusted6)}, ${r6.captures.length - b7} captured`);
+    }
+    return true;
+  });
   r6.close();
 
   // Trusted, but the certificate names `localhost`, not `::1`. The identity
   // check must run for an IP literal and refuse it.
   const rm = await startTlsReceiver({ ipv6: true, cert: "localhost" });
   const mismatch6 = await childSend(`https://[::1]:${rm.port}`, TRUSTED);
-  check("P-VERIFY/IPv6 a trusted certificate for another identity fails, NO bytes", () =>
-    mismatch6.code === "ERR_TLS_CERT_ALTNAME_INVALID" && rm.captures.length === 0);
+  check("P-VERIFY/IPv6 a trusted certificate for another identity fails, NO bytes", () => {
+    if (mismatch6.code !== "ERR_TLS_CERT_ALTNAME_INVALID" || rm.captures.length !== 0) {
+      throw new Error(`child ${JSON.stringify(mismatch6)}, ${rm.captures.length} captured`);
+    }
+    return true;
+  });
   rm.close();
 
   const real6 = https.createServer({
@@ -208,8 +223,10 @@ if (NO_IPV6) {
   await new Promise((res) => real6.listen(0, "::1", res));
   const realSent6 = await childSend(`https://[::1]:${real6.address().port}`, TRUSTED6);
   real6.close();
-  check("W-REAL/TLS/IPv6 a real HTTPS server on ::1 accepts the request", () =>
-    realSent6.status === 200);
+  check("W-REAL/TLS/IPv6 a real HTTPS server on ::1 accepts the request", () => {
+    if (realSent6.status !== 200) throw new Error(`child ${JSON.stringify(realSent6)}`);
+    return true;
+  });
 }
 
 if (failures.length) {
